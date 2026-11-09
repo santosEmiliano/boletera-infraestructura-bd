@@ -1,0 +1,28 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-pc1
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+      - "33061:33061"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../../mysql/conf/pc1.cnf:/etc/mysql/conf.d/boletera.cnf:ro
+      - ../../mysql/init:/docker-entrypoint-initdb.d:ro
+    extra_hosts:
+      - "pc1:${PC1_IP}"
+      - "pc2:${PC2_IP}"
+      - "pc3:${PC3_IP}"
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -uroot -p$$MYSQL_ROOT_PASSWORD -e 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  mysql_data:
+    name: boletera_mysql_data
