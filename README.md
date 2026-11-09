@@ -7,7 +7,7 @@ Equipo de dos integrantes.
 ## Estructura
 
 ```
-docs/          arquitectura, inventario, bitácora, procedimientos de falla
+docs/          arquitectura, inventario, procedimientos de falla
 infra/         archivos de Docker Compose por PC y configuración de monitoreo
 mysql/         esquema, seeds y configuración de Group Replication
 postgres/      esquema, seeds y scripts de replicación
@@ -19,6 +19,5 @@ simulator/     simulador de transacciones
 ## Dónde empezar
 
 - `docs/arquitectura.md`: qué corre en cada PC y por qué.
-- `docs/bitacora.md`: problemas encontrados y cómo se resolvieron.
 
 Las contraseñas y variables de entorno van en `.env` (no se versiona); cada carpeta de `infra/` tendrá su `.env.example`.
