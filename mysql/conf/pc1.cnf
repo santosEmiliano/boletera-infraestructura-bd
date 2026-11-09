@@ -16,3 +16,4 @@ loose-group_replication_local_address="pc1:33061"
 loose-group_replication_group_seeds="pc1:33061,pc2:33061,pc3:33061"
 loose-group_replication_start_on_boot=OFF
 loose-group_replication_bootstrap_group=OFF
+loose-group_replication_recovery_get_public_key=ON

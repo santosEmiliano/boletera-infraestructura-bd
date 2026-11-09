@@ -5,12 +5,14 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_INITDB_SKIP_TZINFO: "1"
     ports:
       - "${MYSQL_PORT:-3306}:3306"
       - "33061:33061"
     volumes:
       - mysql_data:/var/lib/mysql
       - ../../mysql/conf/pc3.cnf:/etc/mysql/conf.d/boletera.cnf:ro
+      - ../../mysql/scripts:/scripts:ro
     extra_hosts:
       - "pc1:${PC1_IP}"
       - "pc2:${PC2_IP}"
