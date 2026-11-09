@@ -1,0 +1,15 @@
+# Secretos y configuración local
+.env
+*.env.local
+
+# Dependencias y compilados
+node_modules/
+dist/
+
+# Copias de bases de datos y datos locales
+*.dump
+*.sql.gz
+
+# Sistema
+.DS_Store
+Thumbs.db
