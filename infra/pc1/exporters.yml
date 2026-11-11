@@ -1,0 +1,18 @@
+services:
+  mysqld-exporter:
+    image: prom/mysqld-exporter:v0.21.0
+    container_name: mysqld-exporter-pc1
+    restart: unless-stopped
+    command:
+      - --mysqld.address=pc1:3306
+      - --mysqld.username=exporter
+      - --collect.perf_schema.replication_group_members
+      - --collect.perf_schema.replication_group_member_stats
+    environment:
+      MYSQLD_EXPORTER_PASSWORD: ${EXPORTER_MYSQL_PASSWORD}
+    ports:
+      - "9104:9104"
+    extra_hosts:
+      - "pc1:${PC1_IP}"
+      - "pc2:${PC2_IP}"
+      - "pc3:${PC3_IP}"

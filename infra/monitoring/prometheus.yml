@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: sistema
+    static_configs:
+      - targets: ['pc1:9100', 'pc2:9100', 'pc3:9182']
+
+  - job_name: mysql
+    static_configs:
+      - targets: ['pc1:9104', 'pc2:9104', 'pc3:9104']
+
+  - job_name: postgres
+    static_configs:
+      - targets: ['pc2:9187', 'pc3:9187']
+
+  - job_name: mongodb
+    static_configs:
+      - targets: ['pc1:9216', 'pc2:9216', 'pc3:9216', 'pc1:9217', 'pc2:9217', 'pc3:9217']
+
+  - job_name: api
+    static_configs:
+      - targets: ['pc1:4000']
