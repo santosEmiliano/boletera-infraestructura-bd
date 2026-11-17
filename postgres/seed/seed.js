@@ -1,4 +1,5 @@
 import pg from 'pg';
+import mysql from 'mysql2/promise';
 import { fakerES_MX as faker } from '@faker-js/faker';
 
 const SEDES = 4;
@@ -6,6 +7,7 @@ const FUNCIONES = 40;
 const ASIENTOS_POR_FUNCION = 1000;
 const ASIENTOS_POR_ZONA = 100;
 const ASIENTOS_POR_FILA = 25;
+const MINUTOS_RESERVA = 10;
 const LOTE = 1000;
 
 // Acuerdo con el seed de MySQL (mysql/seed/README.md): la función f va en la
@@ -30,6 +32,17 @@ const ZONAS = [
   { nombre: 'Balcón B', precio: 400 },
 ];
 const zonaId = (sede, pos) => (sede - 1) * ZONAS.length + Math.floor(pos / ASIENTOS_POR_ZONA) + 1;
+
+// Qué le pasa en PostgreSQL a cada asiento según el estado de su orden en MySQL.
+//   asiento:     estado final del asiento
+//   reserva:     estado de la reserva
+//   cierre:      movimiento que sigue a la reserva (null si la orden sigue pendiente)
+const POR_ESTADO = {
+  pagada: { asiento: 'vendido', reserva: 'confirmada', cierre: 'venta' },
+  cancelada: { asiento: 'libre', reserva: 'cancelada', cierre: 'liberacion' },
+  expirada: { asiento: 'libre', reserva: 'expirada', cierre: 'liberacion' },
+  pendiente: { asiento: 'reservado', reserva: 'activa', cierre: null },
+};
 
 // 40 filas de 25 asientos por función: A a Z y luego AA a AN.
 function fila(pos) {
@@ -81,11 +94,70 @@ function generarCatalogo() {
   return { zonas, funciones, asientos };
 }
 
+// Un renglón por asiento vendido, cancelado, expirado o pendiente en MySQL, con
+// el estado de su orden y la fecha de su pago (si lo hubo).
+async function leerOrdenes() {
+  const db = await mysql.createConnection({
+    host: process.env.MYSQL_HOST ?? 'localhost',
+    port: Number(process.env.MYSQL_PORT ?? 3306),
+    user: process.env.MYSQL_USER ?? 'root',
+    password: process.env.MYSQL_PASSWORD,
+    database: process.env.MYSQL_DATABASE ?? 'boletera',
+  });
+  try {
+    const [filas] = await db.query(`
+      SELECT d.orden_id, d.sede_id, d.asiento_id, o.estado, o.creada_en, p.pagado_en
+      FROM orden_detalle d
+      JOIN ordenes o ON o.orden_id = d.orden_id
+      LEFT JOIN (SELECT orden_id, MAX(pagado_en) AS pagado_en FROM pagos GROUP BY orden_id) p
+        ON p.orden_id = d.orden_id
+      ORDER BY d.orden_id, d.detalle_id`);
+    return filas;
+  } finally {
+    await db.end();
+  }
+}
+
+// Traduce las órdenes de MySQL a estados de asientos, reservas y movimientos.
+function generarInventario(ordenes) {
+  const cambios = {}; // cambios[estado][sede] = [asiento_id, ...]
+  const reservas = [];
+  const movimientos = [];
+
+  for (const o of ordenes) {
+    const regla = POR_ESTADO[o.estado];
+    const creada = new Date(o.creada_en);
+    const expira = new Date(creada.getTime() + MINUTOS_RESERVA * 60000);
+
+    if (regla.asiento !== 'libre') {
+      cambios[regla.asiento] ??= {};
+      (cambios[regla.asiento][o.sede_id] ??= []).push(o.asiento_id);
+    }
+
+    reservas.push([o.sede_id, o.asiento_id, o.orden_id, expira, regla.reserva]);
+    movimientos.push([o.sede_id, o.asiento_id, 'reserva', creada]);
+    if (regla.cierre) {
+      // La venta o liberación ocurre al pagar o rechazar el pago; una orden
+      // expirada se libera cuando vence la reserva.
+      const cuando = o.pagado_en ? new Date(o.pagado_en) : expira;
+      movimientos.push([o.sede_id, o.asiento_id, regla.cierre, cuando]);
+    }
+  }
+
+  return { cambios, reservas, movimientos };
+}
+
 async function main() {
-  if (!process.env.PGPASSWORD) {
-    console.error('Falta PGPASSWORD');
+  if (!process.env.PGPASSWORD || !process.env.MYSQL_PASSWORD) {
+    console.error('Faltan PGPASSWORD y MYSQL_PASSWORD');
     process.exit(1);
   }
+
+  faker.seed(2026);
+  const c = generarCatalogo();
+  const ordenes = await leerOrdenes();
+  const inv = generarInventario(ordenes);
+
   const db = new pg.Client({
     host: process.env.PGHOST ?? 'localhost',
     port: Number(process.env.PGPORT ?? 5432),
@@ -95,9 +167,6 @@ async function main() {
   });
   await db.connect();
 
-  faker.seed(2026);
-  const c = generarCatalogo();
-
   // Todo en una transacción: si algo falla, no queda nada cargado a medias.
   try {
     await db.query('BEGIN');
@@ -105,7 +174,16 @@ async function main() {
     await insertar(db, 'funciones', ['funcion_id', 'evento_id', 'sede_id', 'fecha_hora'], c.funciones);
     await insertar(db, 'asientos', ['asiento_id', 'sede_id', 'funcion_id', 'zona_id', 'fila', 'numero'], c.asientos);
 
-    // Los ids se insertaron a mano: la secuencia sigue después del último.
+    // Un UPDATE por estado y sede, siempre con sede_id para tocar una sola partición.
+    for (const [estado, porSede] of Object.entries(inv.cambios)) {
+      for (const [sede, ids] of Object.entries(porSede)) {
+        await db.query('UPDATE asientos SET estado = $1 WHERE sede_id = $2 AND asiento_id = ANY($3)', [estado, sede, ids]);
+      }
+    }
+    await insertar(db, 'reservas_asiento', ['sede_id', 'asiento_id', 'orden_id', 'expira_en', 'estado'], inv.reservas);
+    await insertar(db, 'movimientos_inventario', ['sede_id', 'asiento_id', 'tipo', 'creado_en'], inv.movimientos);
+
+    // Los ids de zonas y funciones se insertaron a mano: la secuencia sigue después del último.
     await db.query("SELECT setval(pg_get_serial_sequence('zonas', 'zona_id'), (SELECT max(zona_id) FROM zonas))");
     await db.query("SELECT setval(pg_get_serial_sequence('funciones', 'funcion_id'), (SELECT max(funcion_id) FROM funciones))");
     await db.query('COMMIT');
@@ -117,6 +195,7 @@ async function main() {
   }
 
   console.log(`zonas ${c.zonas.length}, funciones ${c.funciones.length}, asientos ${c.asientos.length}`);
+  console.log(`asientos en ordenes de MySQL ${ordenes.length}, reservas ${inv.reservas.length}, movimientos ${inv.movimientos.length}`);
 }
 
 main().catch((e) => {
