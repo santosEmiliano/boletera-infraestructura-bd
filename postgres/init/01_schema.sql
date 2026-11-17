@@ -77,3 +77,35 @@ CREATE TABLE asientos_mty  PARTITION OF asientos FOR VALUES IN (4);
 
 -- Asientos libres de una función: se crea en cada partición.
 CREATE INDEX idx_asientos_funcion ON asientos (funcion_id, estado);
+
+-- Asientos apartados mientras se cobra. Se particiona igual que asientos para
+-- que una compra (que siempre es de una sola sede) toque una sola partición en
+-- las dos tablas. orden_id es la orden en MySQL.
+--   activa     -> apartado, esperando el pago (vence en 10 minutos)
+--   confirmada -> se pagó y el asiento quedó vendido
+--   expirada   -> no se pagó a tiempo y el asiento volvió a libre
+--   cancelada  -> se rechazó el pago y el asiento volvió a libre
+CREATE TABLE reservas_asiento (
+  reserva_id BIGSERIAL,
+  sede_id    SMALLINT    NOT NULL,
+  asiento_id BIGINT      NOT NULL,
+  orden_id   BIGINT      NOT NULL,
+  expira_en  TIMESTAMPTZ NOT NULL,
+  estado     VARCHAR(12) NOT NULL DEFAULT 'activa'
+             CHECK (estado IN ('activa', 'confirmada', 'expirada', 'cancelada')),
+  PRIMARY KEY (sede_id, reserva_id),
+  FOREIGN KEY (sede_id, asiento_id) REFERENCES asientos (sede_id, asiento_id)
+) PARTITION BY LIST (sede_id);
+
+CREATE TABLE reservas_ags  PARTITION OF reservas_asiento FOR VALUES IN (1);
+CREATE TABLE reservas_cdmx PARTITION OF reservas_asiento FOR VALUES IN (2);
+CREATE TABLE reservas_gdl  PARTITION OF reservas_asiento FOR VALUES IN (3);
+CREATE TABLE reservas_mty  PARTITION OF reservas_asiento FOR VALUES IN (4);
+
+-- Confirmar o cancelar una compra busca las reservas de su orden.
+CREATE INDEX idx_reservas_orden ON reservas_asiento (orden_id);
+
+-- El proceso de expiración (cada minuto) solo busca reservas activas vencidas;
+-- el índice parcial guarda solo las activas, así que se mantiene chico.
+CREATE INDEX idx_reservas_expiracion ON reservas_asiento (expira_en)
+  WHERE estado = 'activa';
