@@ -80,7 +80,50 @@ Se crean el día 3, ya con el grupo formado. Las contraseñas van en `.env`, nun
 
 ## 3. PostgreSQL
 
-_Pendiente: esquema, partición por sede, justificación y evidencia de `EXPLAIN`._
+### 3.1 Qué guarda y por qué PostgreSQL
+
+Sedes, zonas, funciones, asientos, reservas y movimientos de inventario: el inventario de lugares. Es la parte del sistema con más competencia, porque en una preventa cientos de compradores intentan apartar los mismos asientos al mismo tiempo.
+
+PostgreSQL da el control de concurrencia que esto necesita. La reserva es una sola sentencia, `UPDATE ... WHERE estado = 'libre' RETURNING`: si dos compras piden el mismo asiento, la segunda espera a que termine la primera y, al volver a evaluar la condición, ya no lo encuentra libre. Además tiene particionado declarativo para la fragmentación horizontal y Streaming Replication.
+
+### 3.2 Esquema
+
+Base `boletera`, seis tablas. El script completo está en `postgres/init/01_schema.sql`.
+
+| Tabla | Descripción |
+|---|---|
+| `sedes` | Las 4 sedes: Aguascalientes, Ciudad de México, Guadalajara y Monterrey. |
+| `zonas` | 10 por sede, con nombre y precio base. |
+| `funciones` | 10 por sede. Cada una es una fecha de un evento en una sede. |
+| `asientos` | 1,000 por función, con estado `libre`, `reservado` o `vendido`. **Particionada por sede.** |
+| `reservas_asiento` | Asientos apartados mientras se cobra; vencen a los 10 minutos. **Particionada por sede.** |
+| `movimientos_inventario` | Bitácora de cada cambio de estado de un asiento: `reserva`, `venta` o `liberacion`. |
+
+```mermaid
+erDiagram
+    sedes ||--o{ zonas : tiene
+    sedes ||--o{ funciones : programa
+    sedes ||--o{ asientos : contiene
+    funciones ||--o{ asientos : ofrece
+    zonas ||--o{ asientos : agrupa
+    asientos ||--o{ reservas_asiento : "se aparta en"
+    asientos ||--o{ movimientos_inventario : registra
+```
+
+La llave de un asiento es `(sede_id, asiento_id)`, con `asiento_id` del 1 al 10,000 dentro de cada sede. MySQL guarda esa misma pareja en `orden_detalle` y `boletos`.
+
+`funciones.evento_id` (MongoDB) y `reservas_asiento.orden_id` (MySQL) son **referencias lógicas**: no tienen llave foránea y la API valida que existan.
+
+Estados de una reserva:
+
+| Estado | Significado |
+|---|---|
+| `activa` | Asiento apartado, esperando el pago. |
+| `confirmada` | Se pagó y el asiento quedó `vendido`. |
+| `expirada` | No se pagó en 10 minutos; el asiento volvió a `libre`. |
+| `cancelada` | Se rechazó el pago; el asiento volvió a `libre`. |
+
+_Pendiente: fragmentación horizontal con su evidencia, zonas, replicación y usuarios._
 
 ## 4. MongoDB
 
