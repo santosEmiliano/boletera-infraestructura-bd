@@ -45,3 +45,35 @@ CREATE TABLE funciones (
 
 -- GET /api/funciones?evento_id= busca por esta columna.
 CREATE INDEX idx_funciones_evento ON funciones (evento_id);
+
+-- ---------------------------------------------------------------------------
+-- Fragmentación horizontal: PARTITION BY LIST (sede_id)
+-- Cada sede opera de forma independiente y toda consulta de asientos filtra
+-- por sede, así que PostgreSQL solo lee la partición que toca (partition
+-- pruning). La llave primaria y los UNIQUE deben incluir sede_id, porque cada
+-- partición solo puede garantizar unicidad dentro de sí misma.
+-- ---------------------------------------------------------------------------
+
+-- 1,000 asientos por función (40,000 en total). asiento_id va de 1 a 10,000
+-- dentro de cada sede y lo asigna el seed, no una secuencia, para que coincida
+-- con los (sede_id, asiento_id) que guarda MySQL en orden_detalle y boletos.
+CREATE TABLE asientos (
+  asiento_id BIGINT      NOT NULL,
+  sede_id    SMALLINT    NOT NULL REFERENCES sedes (sede_id),
+  funcion_id INT         NOT NULL REFERENCES funciones (funcion_id),
+  zona_id    INT         NOT NULL REFERENCES zonas (zona_id),
+  fila       CHAR(2)     NOT NULL,
+  numero     SMALLINT    NOT NULL,
+  estado     VARCHAR(12) NOT NULL DEFAULT 'libre'
+             CHECK (estado IN ('libre', 'reservado', 'vendido')),
+  PRIMARY KEY (sede_id, asiento_id),
+  UNIQUE (sede_id, funcion_id, fila, numero)
+) PARTITION BY LIST (sede_id);
+
+CREATE TABLE asientos_ags  PARTITION OF asientos FOR VALUES IN (1);
+CREATE TABLE asientos_cdmx PARTITION OF asientos FOR VALUES IN (2);
+CREATE TABLE asientos_gdl  PARTITION OF asientos FOR VALUES IN (3);
+CREATE TABLE asientos_mty  PARTITION OF asientos FOR VALUES IN (4);
+
+-- Asientos libres de una función: se crea en cada partición.
+CREATE INDEX idx_asientos_funcion ON asientos (funcion_id, estado);
