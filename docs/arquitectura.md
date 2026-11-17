@@ -151,7 +151,7 @@ Solo se particionan estas dos tablas porque son las grandes y las que reciben la
 
 #### Evidencia
 
-Se obtiene con `postgres/scripts/01_verificar_particiones.sql`, que solo lee y también se puede correr en la réplica. La salida de abajo es de la prueba del esquema, con un asiento y una reserva por sede.
+Se obtiene con `postgres/scripts/01_verificar_particiones.sql`, que solo lee y también se puede correr en la réplica. La salida de abajo es con los datos del seed (sección 3.5).
 
 Particiones y la sede que guarda cada una:
 
@@ -168,27 +168,27 @@ Particiones y la sede que guarda cada una:
  reservas_asiento | reservas_mty  | FOR VALUES IN ('4')
 ```
 
-Filas por partición en `asientos` (la de `reservas_asiento` es igual):
+Filas por partición:
 
 ```
-   particion   | filas
----------------+-------
- asientos_ags  |     1
- asientos_cdmx |     1
- asientos_gdl  |     1
- asientos_mty  |     1
+   particion   | filas            particion   | filas
+---------------+-------         ---------------+-------
+ asientos_ags  | 10000           reservas_ags  |  4951
+ asientos_cdmx | 10000           reservas_cdmx |  4934
+ asientos_gdl  | 10000           reservas_gdl  |  4816
+ asientos_mty  | 10000           reservas_mty  |  4974
 ```
 
 **Con `sede_id`**, `EXPLAIN SELECT * FROM asientos WHERE sede_id = 2` solo lee `asientos_cdmx`:
 
 ```
- Bitmap Heap Scan on asientos_cdmx asientos
-   Recheck Cond: (sede_id = 2)
-   ->  Bitmap Index Scan on asientos_cdmx_sede_id_funcion_id_fila_numero_key
-         Index Cond: (sede_id = 2)
+ Seq Scan on asientos_cdmx asientos
+   Filter: (sede_id = 2)
 ```
 
-**Sin `sede_id`**, `EXPLAIN SELECT * FROM asientos WHERE funcion_id = 1` tiene que recorrer las cuatro particiones (`Append`):
+Recorre la partición completa porque todas sus filas son de la sede 2: leerla de corrido es más rápido que pasar por un índice. Las otras tres particiones ni se abren.
+
+**Sin `sede_id`**, `EXPLAIN SELECT * FROM asientos WHERE funcion_id = 1` tiene que revisar las cuatro particiones (`Append`), aunque la función 1 solo existe en Aguascalientes:
 
 ```
  Append
@@ -196,23 +196,17 @@ Filas por partición en `asientos` (la de `reservas_asiento` es igual):
          Recheck Cond: (funcion_id = 1)
          ->  Bitmap Index Scan on asientos_ags_funcion_id_estado_idx
                Index Cond: (funcion_id = 1)
-   ->  Bitmap Heap Scan on asientos_cdmx asientos_2
-         Recheck Cond: (funcion_id = 1)
-         ->  Bitmap Index Scan on asientos_cdmx_funcion_id_estado_idx
-               Index Cond: (funcion_id = 1)
-   ->  Bitmap Heap Scan on asientos_gdl asientos_3
-         Recheck Cond: (funcion_id = 1)
-         ->  Bitmap Index Scan on asientos_gdl_funcion_id_estado_idx
-               Index Cond: (funcion_id = 1)
-   ->  Bitmap Heap Scan on asientos_mty asientos_4
-         Recheck Cond: (funcion_id = 1)
-         ->  Bitmap Index Scan on asientos_mty_funcion_id_estado_idx
-               Index Cond: (funcion_id = 1)
+   ->  Index Scan using asientos_cdmx_funcion_id_estado_idx on asientos_cdmx asientos_2
+         Index Cond: (funcion_id = 1)
+   ->  Index Scan using asientos_gdl_funcion_id_estado_idx on asientos_gdl asientos_3
+         Index Cond: (funcion_id = 1)
+   ->  Index Scan using asientos_mty_funcion_id_estado_idx on asientos_mty asientos_4
+         Index Cond: (funcion_id = 1)
 ```
 
-`reservas_asiento` se comporta igual: con `sede_id = 2` solo lee `reservas_cdmx`.
+Tres de esas cuatro lecturas no encuentran nada. Por eso la API siempre manda `sede_id`.
 
-Después del seed se vuelve a correr el script para actualizar los conteos con los datos completos.
+`reservas_asiento` se comporta igual: con `sede_id = 2` solo lee `reservas_cdmx`.
 
 ### 3.4 Zonas, funciones y asientos
 
@@ -247,7 +241,41 @@ La relación entre funciones y asientos es la misma que usa el seed de MySQL: la
 
 **Pendiente de coordinar:** el seed de MySQL (`mysql/seed/seed.js`) usa hoy 4 zonas (VIP, Preferente, General y Balcón). Para que `orden_detalle.zona` y `orden_detalle.precio` coincidan con esta tabla, hay que cambiar su arreglo `ZONAS` por estas 10 y volver a correr el seed.
 
-_Pendiente: replicación y usuarios._
+### 3.5 Datos de prueba
+
+El seed está en `postgres/seed` (uso y detalle en su README). Se corre **después** del seed de MySQL, porque lee sus órdenes: cada asiento que aparece en una orden queda en PostgreSQL con el estado que le corresponde, así los dos motores coinciden.
+
+| Orden en MySQL | Asiento | Reserva | Movimientos |
+|---|---|---|---|
+| `pagada` | `vendido` | `confirmada` | `reserva` y `venta` |
+| `cancelada` | `libre` | `cancelada` | `reserva` y `liberacion` |
+| `expirada` | `libre` | `expirada` | `reserva` y `liberacion` |
+| `pendiente` | `reservado` | `activa` | `reserva` |
+
+| Tabla | Filas |
+|---|---|
+| `sedes` | 4 |
+| `zonas` | 40 |
+| `funciones` | 40 |
+| `asientos` | 40,000 |
+| `reservas_asiento` | 19,675 |
+| `movimientos_inventario` | 38,330 |
+| **Total** | **98,089** |
+
+Se comprobó contra el seed de MySQL: los 15,713 asientos de órdenes pagadas son los 15,713 `vendido` y las 15,713 reservas `confirmada` de PostgreSQL, y coinciden con las 15,713 filas de `boletos`. Los 1,020 de órdenes pendientes son los 1,020 `reservado` y las 1,020 reservas `activa`.
+
+### 3.6 Usuarios
+
+Se crean con `postgres/scripts/02_roles.sql`, en el primario; la réplica los recibe por la replicación. Las contraseñas llegan como variables de `psql` (`-v api_clave=... -v exporter_clave=...`) y nunca se guardan en el repositorio.
+
+| Usuario | Permisos | Para qué |
+|---|---|---|
+| `boletera_api` | `SELECT` en todas las tablas; `INSERT` y `UPDATE` en `asientos` y `reservas_asiento`; solo `INSERT` en `movimientos_inventario` | La API. No modifica el catálogo y no puede cambiar ni borrar la bitácora. |
+| `exporter` | `pg_monitor`, máximo 3 conexiones | Métricas para Prometheus. Ve estadísticas, no datos. |
+
+A diferencia del usuario de MySQL, `boletera_api` no tiene `DELETE`: la API nunca borra filas en PostgreSQL. Se comprobó que `INSERT` en `zonas`, `DELETE` en `movimientos_inventario` y `SELECT` en `asientos` como `exporter` dan `permission denied`.
+
+_Pendiente: replicación._
 
 ## 4. MongoDB
 
