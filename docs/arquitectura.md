@@ -123,7 +123,98 @@ Estados de una reserva:
 | `expirada` | No se pagó en 10 minutos; el asiento volvió a `libre`. |
 | `cancelada` | Se rechazó el pago; el asiento volvió a `libre`. |
 
-_Pendiente: fragmentación horizontal con su evidencia, zonas, replicación y usuarios._
+### 3.3 Fragmentación horizontal
+
+Las tablas `asientos` y `reservas_asiento` se dividen por filas según la sede, con particionado declarativo `PARTITION BY LIST (sede_id)`:
+
+| Sede | `asientos` | `reservas_asiento` |
+|---|---|---|
+| 1, Aguascalientes | `asientos_ags` | `reservas_ags` |
+| 2, Ciudad de México | `asientos_cdmx` | `reservas_cdmx` |
+| 3, Guadalajara | `asientos_gdl` | `reservas_gdl` |
+| 4, Monterrey | `asientos_mty` | `reservas_mty` |
+
+La API y las consultas usan la tabla madre; PostgreSQL manda cada fila a su partición según su `sede_id`.
+
+Justificación del criterio:
+
+1. **Cada sede opera por separado.** Una función pertenece a una sola sede, así que una compra nunca mezcla asientos de dos sedes.
+2. **Toda consulta filtra por sede.** El contrato de la API pide `sede_id` al listar asientos y al comprar, así que PostgreSQL solo lee la partición que toca (*partition pruning*) y deja de lado las otras tres.
+3. **Índices más chicos.** Cada partición tiene sus propios índices, con la cuarta parte de las filas.
+4. **Cada sede se puede manejar aparte.** Una partición se puede respaldar, limpiar o separar (`DETACH PARTITION`) sin tocar las demás. Esto permite la mejora opcional de llevar las sedes 3 y 4 a otro servidor.
+
+Se eligió partición **por lista** porque la sede es un valor fijo de un conjunto pequeño. La partición por rango sirve para valores continuos, como fechas, y la partición por hash reparte las filas de forma pareja, pero no permite saber en qué partición está cada sede.
+
+Solo se particionan estas dos tablas porque son las grandes y las que reciben la carga de la preventa. Las tablas de catálogo tienen pocas decenas de filas.
+
+**Restricción de PostgreSQL:** la llave primaria y cualquier `UNIQUE` de una tabla particionada deben incluir la columna de partición, porque cada partición solo puede garantizar unicidad dentro de sí misma. Por eso la llave es `(sede_id, asiento_id)` y no solo `asiento_id`.
+
+#### Evidencia
+
+Se obtiene con `postgres/scripts/01_verificar_particiones.sql`, que solo lee y también se puede correr en la réplica. La salida de abajo es de la prueba del esquema, con un asiento y una reserva por sede.
+
+Particiones y la sede que guarda cada una:
+
+```
+      tabla       |   particion   |      valores
+------------------+---------------+--------------------
+ asientos         | asientos_ags  | FOR VALUES IN ('1')
+ asientos         | asientos_cdmx | FOR VALUES IN ('2')
+ asientos         | asientos_gdl  | FOR VALUES IN ('3')
+ asientos         | asientos_mty  | FOR VALUES IN ('4')
+ reservas_asiento | reservas_ags  | FOR VALUES IN ('1')
+ reservas_asiento | reservas_cdmx | FOR VALUES IN ('2')
+ reservas_asiento | reservas_gdl  | FOR VALUES IN ('3')
+ reservas_asiento | reservas_mty  | FOR VALUES IN ('4')
+```
+
+Filas por partición en `asientos` (la de `reservas_asiento` es igual):
+
+```
+   particion   | filas
+---------------+-------
+ asientos_ags  |     1
+ asientos_cdmx |     1
+ asientos_gdl  |     1
+ asientos_mty  |     1
+```
+
+**Con `sede_id`**, `EXPLAIN SELECT * FROM asientos WHERE sede_id = 2` solo lee `asientos_cdmx`:
+
+```
+ Bitmap Heap Scan on asientos_cdmx asientos
+   Recheck Cond: (sede_id = 2)
+   ->  Bitmap Index Scan on asientos_cdmx_sede_id_funcion_id_fila_numero_key
+         Index Cond: (sede_id = 2)
+```
+
+**Sin `sede_id`**, `EXPLAIN SELECT * FROM asientos WHERE funcion_id = 1` tiene que recorrer las cuatro particiones (`Append`):
+
+```
+ Append
+   ->  Bitmap Heap Scan on asientos_ags asientos_1
+         Recheck Cond: (funcion_id = 1)
+         ->  Bitmap Index Scan on asientos_ags_funcion_id_estado_idx
+               Index Cond: (funcion_id = 1)
+   ->  Bitmap Heap Scan on asientos_cdmx asientos_2
+         Recheck Cond: (funcion_id = 1)
+         ->  Bitmap Index Scan on asientos_cdmx_funcion_id_estado_idx
+               Index Cond: (funcion_id = 1)
+   ->  Bitmap Heap Scan on asientos_gdl asientos_3
+         Recheck Cond: (funcion_id = 1)
+         ->  Bitmap Index Scan on asientos_gdl_funcion_id_estado_idx
+               Index Cond: (funcion_id = 1)
+   ->  Bitmap Heap Scan on asientos_mty asientos_4
+         Recheck Cond: (funcion_id = 1)
+         ->  Bitmap Index Scan on asientos_mty_funcion_id_estado_idx
+               Index Cond: (funcion_id = 1)
+```
+
+`reservas_asiento` se comporta igual: con `sede_id = 2` solo lee `reservas_cdmx`.
+
+Después del seed se vuelve a correr el script para actualizar los conteos con los datos completos.
+
+_Pendiente: zonas, replicación y usuarios._
 
 ## 4. MongoDB
 
