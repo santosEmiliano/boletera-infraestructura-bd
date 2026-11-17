@@ -214,7 +214,40 @@ Filas por partición en `asientos` (la de `reservas_asiento` es igual):
 
 Después del seed se vuelve a correr el script para actualizar los conteos con los datos completos.
 
-_Pendiente: zonas, replicación y usuarios._
+### 3.4 Zonas, funciones y asientos
+
+Cada sede tiene **10 zonas** (40 en total) y **10 funciones** (40 en total). Cada función ofrece 1,000 asientos, y la zona de un asiento depende de su posición dentro de la función, en bloques de 100:
+
+| # | Zona | Posición en la función | Precio base |
+|---|---|---|---|
+| 1 | VIP Pista | 1 a 100 | $2,500 |
+| 2 | VIP Lateral | 101 a 200 | $2,000 |
+| 3 | Platino | 201 a 300 | $1,800 |
+| 4 | Oro | 301 a 400 | $1,500 |
+| 5 | Preferente A | 401 a 500 | $1,200 |
+| 6 | Preferente B | 501 a 600 | $1,000 |
+| 7 | General A | 601 a 700 | $850 |
+| 8 | General B | 701 a 800 | $700 |
+| 9 | Balcón A | 801 a 900 | $500 |
+| 10 | Balcón B | 901 a 1,000 | $400 |
+
+Las cuatro sedes usan las mismas 10 zonas. El seed las inserta en orden de sede (las 10 de la sede 1, luego las de la sede 2, y así), de modo que `zona_id` va del 1 al 40.
+
+Con eso, todo se calcula a partir de `(sede_id, asiento_id)`:
+
+| Dato | Fórmula | Ejemplo: sede 2, asiento 1,350 |
+|---|---|---|
+| Función | `(sede_id - 1) * 10 + ceil(asiento_id / 1000)` | 12 |
+| Posición en la función | `(asiento_id - 1) % 1000 + 1` | 350 |
+| Zona | `(sede_id - 1) * 10 + ceil(posición / 100)` | 14 (Oro de la sede 2) |
+
+La relación entre funciones y asientos es la misma que usa el seed de MySQL: la función `f` es de la sede `ceil(f / 10)` y usa los asientos `((f - 1) % 10) * 1000 + 1` a `+ 1000` de esa sede.
+
+**Por qué así.** El plan acordado pedía unas 40 zonas (10 por sede). Los bloques de 100 permiten que los seeds de PostgreSQL y MySQL calculen la misma zona y el mismo precio solo con la posición del asiento, sin consultarse entre sí. La rúbrica no pide un número de zonas.
+
+**Pendiente de coordinar:** el seed de MySQL (`mysql/seed/seed.js`) usa hoy 4 zonas (VIP, Preferente, General y Balcón). Para que `orden_detalle.zona` y `orden_detalle.precio` coincidan con esta tabla, hay que cambiar su arreglo `ZONAS` por estas 10 y volver a correr el seed.
+
+_Pendiente: replicación y usuarios._
 
 ## 4. MongoDB
 
