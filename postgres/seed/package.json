@@ -1,0 +1,14 @@
+{
+  "name": "boletera-postgres-seed",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed": "node seed.js"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^10.6.0",
+    "mysql2": "^3.24.6",
+    "pg": "^8.23.1"
+  }
+}
