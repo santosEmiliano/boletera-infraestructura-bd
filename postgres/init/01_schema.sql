@@ -109,3 +109,22 @@ CREATE INDEX idx_reservas_orden ON reservas_asiento (orden_id);
 -- el índice parcial guarda solo las activas, así que se mantiene chico.
 CREATE INDEX idx_reservas_expiracion ON reservas_asiento (expira_en)
   WHERE estado = 'activa';
+
+-- ---------------------------------------------------------------------------
+-- Bitácora del inventario
+-- ---------------------------------------------------------------------------
+
+-- Un renglón por cada cambio de estado de un asiento. Solo se inserta, nunca se
+-- actualiza, y sirve para reconstruir la historia de un asiento.
+--   reserva    -> libre a reservado
+--   venta      -> reservado a vendido
+--   liberacion -> reservado a libre (reserva expirada o pago rechazado)
+CREATE TABLE movimientos_inventario (
+  mov_id     BIGSERIAL   PRIMARY KEY,
+  sede_id    SMALLINT    NOT NULL,
+  asiento_id BIGINT      NOT NULL,
+  tipo       VARCHAR(15) NOT NULL
+             CHECK (tipo IN ('reserva', 'venta', 'liberacion')),
+  creado_en  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  FOREIGN KEY (sede_id, asiento_id) REFERENCES asientos (sede_id, asiento_id)
+);
