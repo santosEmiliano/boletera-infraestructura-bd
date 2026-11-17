@@ -153,11 +153,6 @@ async function main() {
     process.exit(1);
   }
 
-  faker.seed(2026);
-  const c = generarCatalogo();
-  const ordenes = await leerOrdenes();
-  const inv = generarInventario(ordenes);
-
   const db = new pg.Client({
     host: process.env.PGHOST ?? 'localhost',
     port: Number(process.env.PGPORT ?? 5432),
@@ -167,9 +162,28 @@ async function main() {
   });
   await db.connect();
 
-  // Todo en una transacción: si algo falla, no queda nada cargado a medias.
+  const reiniciar = process.argv.includes('--reiniciar');
+  const { rows: [{ n }] } = await db.query('SELECT count(*)::int AS n FROM asientos');
+  if (n > 0 && !reiniciar) {
+    console.error('La base ya tiene datos. Usa --reiniciar para borrarlos y volver a cargar.');
+    await db.end();
+    process.exit(1);
+  }
+
+  faker.seed(2026);
+  const c = generarCatalogo();
+  const ordenes = await leerOrdenes();
+  const inv = generarInventario(ordenes);
+
+  // Todo en una transacción: si algo falla, no queda nada cargado a medias. El
+  // TRUNCATE también entra en la transacción, así que si la carga falla, los
+  // datos anteriores vuelven.
   try {
     await db.query('BEGIN');
+    if (reiniciar) {
+      // sedes no se borra: la carga el esquema, no el seed.
+      await db.query('TRUNCATE movimientos_inventario, reservas_asiento, asientos, funciones, zonas RESTART IDENTITY');
+    }
     await insertar(db, 'zonas', ['zona_id', 'sede_id', 'nombre', 'precio_base'], c.zonas);
     await insertar(db, 'funciones', ['funcion_id', 'evento_id', 'sede_id', 'fecha_hora'], c.funciones);
     await insertar(db, 'asientos', ['asiento_id', 'sede_id', 'funcion_id', 'zona_id', 'fila', 'numero'], c.asientos);
@@ -189,13 +203,19 @@ async function main() {
     await db.query('COMMIT');
   } catch (e) {
     await db.query('ROLLBACK');
-    throw e;
-  } finally {
     await db.end();
+    throw e;
   }
 
-  console.log(`zonas ${c.zonas.length}, funciones ${c.funciones.length}, asientos ${c.asientos.length}`);
-  console.log(`asientos en ordenes de MySQL ${ordenes.length}, reservas ${inv.reservas.length}, movimientos ${inv.movimientos.length}`);
+  console.log('asientos en ordenes de MySQL'.padEnd(30), ordenes.length);
+  let total = 0;
+  for (const t of ['sedes', 'zonas', 'funciones', 'asientos', 'reservas_asiento', 'movimientos_inventario']) {
+    const { rows: [{ filas }] } = await db.query(`SELECT count(*)::int AS filas FROM ${t}`);
+    console.log(t.padEnd(30), filas);
+    total += filas;
+  }
+  console.log('total'.padEnd(30), total);
+  await db.end();
 }
 
 main().catch((e) => {
