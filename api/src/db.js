@@ -3,7 +3,7 @@ import pg from 'pg';
 import { MongoClient } from 'mongodb';
 import { config } from './config.js';
 
-export const mysqlPool = mysql.createPool({ ...config.mysql, connectionLimit: 10, connectTimeout: 2000 });
+export const mysqlPool = mysql.createPool({ ...config.mysql, connectionLimit: 10, connectTimeout: 2000, decimalNumbers: true });
 
 export const pgPool = new pg.Pool({ ...config.postgres, max: 20, connectionTimeoutMillis: 2000 });
 pgPool.on('error', (e) => console.error('postgres:', e.message));
