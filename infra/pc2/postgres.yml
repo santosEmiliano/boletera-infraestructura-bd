@@ -3,6 +3,20 @@ services:
     image: postgres:16
     container_name: postgres-pc2
     restart: unless-stopped
+    # Parámetros de la replicación. En PostgreSQL 16 ya son los valores por
+    # defecto; se ponen explícitos para que no dependan de la versión.
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
+      - -c
+      - listen_addresses=*
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: boletera
