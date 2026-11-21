@@ -1,0 +1,4 @@
+# Los scripts de shell corren dentro de contenedores Linux: con fin de línea
+# CRLF fallan con "\r: command not found". Se fuerzan a LF aunque se clone en
+# Windows con core.autocrlf=true.
+*.sh text eol=lf
