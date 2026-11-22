@@ -51,3 +51,40 @@ export function escenarioNormal(api) {
     return comprar(api, { eventoId: evento, funcion: funcion.funcion_id, sedeId: funcion.sede_id, asientos });
   };
 }
+
+// Preventa: todos los compradores quieren un asiento de los mismos pocos de una
+// función. Sirve para probar que ningún asiento se vende dos veces: con N
+// asientos en disputa, como máximo N compras pueden salir bien.
+// Antes de empezar busca la función y aparta la lista de asientos en disputa;
+// si la API no responde, lanza un error y no se corre nada.
+export async function prepararPreventa(api, { funcion, asientos: cuantos }) {
+  // La función f es del evento f (regla de los seeds)
+  const evento = eventoId(funcion);
+  const f = await api.get(`/api/funciones?evento_id=${evento}`);
+  const datos = f.status === 200 && f.json?.find((x) => x.funcion_id === funcion);
+  if (!datos) throw new Error(`No se encontró la función ${funcion} (GET /api/funciones respondió ${f.status || f.error})`);
+
+  const a = await api.get(`/api/funciones/${funcion}/asientos?sede_id=${datos.sede_id}`);
+  if (a.status !== 200) throw new Error(`No se pudieron leer los asientos de la función ${funcion} (${a.status || a.error})`);
+  if (a.json.length < cuantos) throw new Error(`La función ${funcion} solo tiene ${a.json.length} asientos libres`);
+  const disputados = a.json.slice(0, cuantos).map((x) => x.asiento_id);
+
+  const unaCompra = () => comprar(api, { eventoId: evento, funcion, sedeId: datos.sede_id, asientos: [elegir(disputados)] });
+  return { unaCompra, sedeId: datos.sede_id, disputados };
+}
+
+// Junta los asientos de todas las compras exitosas (201) y busca repetidos.
+// Un repetido sería una doble venta.
+export function revisarDobleVenta(resultados) {
+  const veces = new Map();
+  for (const r of resultados) {
+    if (r.fase !== 'compra' || r.status !== 201) continue;
+    const asientos = r.boletos?.map((b) => b.asiento_id) ?? r.asientos;
+    for (const id of asientos) {
+      const clave = `${r.sede_id}:${id}`;
+      veces.set(clave, (veces.get(clave) ?? 0) + 1);
+    }
+  }
+  const repetidos = [...veces].filter(([, n]) => n > 1).map(([clave, n]) => ({ asiento: clave, veces: n }));
+  return { vendidos: veces.size, repetidos };
+}
