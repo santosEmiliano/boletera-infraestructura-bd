@@ -11,7 +11,11 @@ cp .env.example .env     # y ajustar las claves
 npm start
 ```
 
-Las pruebas no necesitan bases de datos y se pueden correr con `npm test`.
+`npm test` corre las pruebas de los endpoints y no necesita bases de datos. Las pruebas del modulo de MySQL no se realizan de normal a menos que se pida porque usan la base de datos real y borran lo que crean.
+
+```bash
+PRUEBAS_BD=1 MYSQL_HOST=pc1 MYSQL_PASSWORD=... npm test
+```
 
 ## Estado
 
@@ -23,7 +27,7 @@ Ya se tiene:
 - `/metrics` publica `compras_total`, `compra_duracion_segundos` y `http_peticiones_total`, además de las métricas de Node.
 - Las conexiones: un pool de MySQL, un pool de PostgreSQL (20) y el cliente de MongoDB, en `src/db.js`.
 
-Falta reemplazar los *stubs* por los módulos de cada motor (`src/modules/mysql`, `postgres`, `mongo`) y por el orquestador de la compra (`src/modules/compras`).
+El módulo de MySQL (`src/modules/mysql`) lo llamará el orquestador de la compra. Sus funciones son `obtenerCliente`, `crearOrden`, `registrarPago`, `marcarOrdenPagada`, `cancelarOrden`, `expirarOrden`, `emitirBoletos` y `marcarBoletoUsado`.
 
 ## Estructura
 
@@ -37,6 +41,7 @@ src/
   errores.js      errores con código HTTP
   validar.js      validación de las peticiones
   routes/         salud.js (/health, /metrics) y api.js (/api/...)
+  modules/mysql/  operaciones sobre MySQL (órdenes, pagos, boletos)
   stubs/          datos de ejemplo, temporales
 test/             pruebas con node:test
 ```
