@@ -1,9 +1,10 @@
 // Simulador de transacciones de Boletera: lanza compras contra la API usando
 // solo los endpoints de docs/api-contrato.md.
 import { crearClienteApi } from './src/api.js';
-import { escenarioNormal, prepararPreventa, revisarDobleVenta } from './src/escenarios.js';
+import { escenarioNormal, prepararPreventa } from './src/escenarios.js';
 import { correr } from './src/motor.js';
 import { AYUDA, leerParametros } from './src/parametros.js';
+import { guardar, imprimir, resumir } from './src/reporte.js';
 
 let p;
 try {
@@ -34,13 +35,8 @@ if (p.escenario === 'preventa') {
 }
 const { resultados, duracionMs } = await correr(p, unaCompra);
 
-// Resumen provisional, hasta que exista el reporte
-const porStatus = {};
-for (const r of resultados) {
-  const clave = `${r.fase} ${r.status || r.error}`;
-  porStatus[clave] = (porStatus[clave] ?? 0) + 1;
-}
-console.log(`${resultados.length} compras en ${(duracionMs / 1000).toFixed(1)} s`, porStatus);
-
-const { vendidos, repetidos } = revisarDobleVenta(resultados);
-console.log(`Asientos vendidos: ${vendidos}. Doble venta: ${repetidos.length}`, repetidos.length ? repetidos : '');
+const resumen = resumir(resultados, duracionMs, p);
+imprimir(resumen);
+console.log(`\nGuardado en ${await guardar(resumen, p.salida)}`);
+// Código de salida 1 si hubo doble venta, para que no pase desapercibida
+process.exit(resumen.doble_venta.repetidos.length ? 1 : 0);

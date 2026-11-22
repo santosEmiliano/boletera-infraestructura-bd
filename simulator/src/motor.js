@@ -2,6 +2,8 @@
 // hasta llegar al total de compras o hasta que se acabe la duración.
 // Cada resultado guarda cuándo empezó (ms desde el arranque), para la línea de
 // tiempo del reporte.
+const ESPERA_SI_NO_RESPONDE_MS = 200;
+
 export async function correr({ compras, concurrencia, duracion }, unaCompra) {
   const resultados = [];
   const t0 = performance.now();
@@ -16,6 +18,9 @@ export async function correr({ compras, concurrencia, duracion }, unaCompra) {
       const inicio = performance.now() - t0;
       const r = await unaCompra();
       resultados.push({ ...r, inicio });
+      // Si la API no respondió, el error llega en milisegundos: sin esta pausa
+      // cada comprador haría miles de intentos por segundo mientras está caída.
+      if (r.status === 0) await new Promise((listo) => setTimeout(listo, ESPERA_SI_NO_RESPONDE_MS));
     }
   }
 
