@@ -19,7 +19,8 @@ function lineaDeTiempo(resultados) {
     segundos[s] ??= { segundo: s, exitosas: 0, rechazadas: 0, errores: 0 };
     const fila = segundos[s];
     if (r.fase === 'compra' && r.status === 201) fila.exitosas++;
-    else if (r.fase === 'compra' && (r.status === 409 || r.status === 402)) fila.rechazadas++;
+    // 409, 402 y funciones agotadas son respuestas normales, no fallas de la API
+    else if (r.agotada || (r.fase === 'compra' && (r.status === 409 || r.status === 402))) fila.rechazadas++;
     else fila.errores++;
   }
   return Array.from(segundos, (fila, s) => fila ?? { segundo: s, exitosas: 0, rechazadas: 0, errores: 0 });
@@ -54,7 +55,8 @@ export function resumir(resultados, duracionMs, parametros) {
       otros_4xx: cuenta((r) => r.status >= 400 && r.status < 500 && r.status !== 409 && r.status !== 402),
       errores_5xx: cuenta((r) => r.status >= 500),
       sin_respuesta: cuenta((r) => r.status === 0),
-      fallas_al_consultar: resultados.length - compras.length,
+      funcion_agotada: resultados.filter((r) => r.agotada).length,
+      fallas_al_consultar: resultados.filter((r) => r.fase === 'consulta' && !r.agotada).length,
     },
     duracion_s: redondear(segundos),
     tps: redondear(compras.length / segundos),
@@ -85,6 +87,7 @@ export function imprimir(r) {
   fila('  otros 4xx', t.otros_4xx);
   fila('  5xx', t.errores_5xx);
   fila('  sin respuesta', t.sin_respuesta);
+  fila('Función agotada', t.funcion_agotada);
   fila('Fallas al consultar', t.fallas_al_consultar);
   console.log('');
   fila('Duración', `${r.duracion_s} s`);

@@ -1,5 +1,6 @@
 // Cada escenario devuelve una función que hace una compra completa y regresa:
 //   { fase: 'consulta', status, error }   si falló un GET antes de comprar
+//   { fase: 'consulta', agotada: true }   si la función ya no tiene asientos libres
 //   { fase: 'compra', status, ms, error, sede_id, asientos, boletos }
 // Solo usa los endpoints de docs/api-contrato.md, así que funciona igual
 // contra los stubs que contra la API conectada a las bases.
@@ -45,7 +46,9 @@ export function escenarioNormal(api) {
     const funcion = elegir(f.json);
 
     const a = await api.get(`/api/funciones/${funcion.funcion_id}/asientos?sede_id=${funcion.sede_id}`);
-    if (a.status !== 200 || !a.json?.length) return { fase: 'consulta', status: a.status, error: a.error };
+    if (a.status !== 200) return { fase: 'consulta', status: a.status, error: a.error };
+    // Función sin asientos libres: no es un error de la API, la función se llenó
+    if (!a.json?.length) return { fase: 'consulta', status: 200, agotada: true };
     const asientos = tomar(a.json, azar(1, Math.min(4, a.json.length))).map((x) => x.asiento_id);
 
     return comprar(api, { eventoId: evento, funcion: funcion.funcion_id, sedeId: funcion.sede_id, asientos });
