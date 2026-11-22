@@ -272,10 +272,41 @@ Se crean con `postgres/scripts/02_roles.sql`, en el primario; la réplica los re
 |---|---|---|
 | `boletera_api` | `SELECT` en todas las tablas; `INSERT` y `UPDATE` en `asientos` y `reservas_asiento`; solo `INSERT` en `movimientos_inventario` | La API. No modifica el catálogo y no puede cambiar ni borrar la bitácora. |
 | `exporter` | `pg_monitor`, máximo 3 conexiones | Métricas para Prometheus. Ve estadísticas, no datos. |
+| `replicator` | `REPLICATION`, sin permisos sobre las tablas | La conexión de la réplica al primario. Se crea con `03_replicacion.sql` (sección 3.7). |
 
 A diferencia del usuario de MySQL, `boletera_api` no tiene `DELETE`: la API nunca borra filas en PostgreSQL. Se comprobó que `INSERT` en `zonas`, `DELETE` en `movimientos_inventario` y `SELECT` en `asientos` como `exporter` dan `permission denied`.
 
-_Pendiente: replicación._
+### 3.7 Replicación
+
+Streaming Replication de PC2 (primario) a PC3 (réplica). El procedimiento completo, con el failover y el regreso del primario caído, está en `docs/replicacion-postgres.md`.
+
+| Decisión | Alternativa descartada | Por qué |
+|---|---|---|
+| Replicación **física** | Lógica (`PUBLICATION`/`SUBSCRIPTION`) | La física copia el servidor completo: roles, particiones e índices llegan sin hacer nada en la réplica. La lógica pide crear el esquema a mano en PC3 y no replica los roles. |
+| **Asíncrona** | Síncrona (`synchronous_standby_names`) | Con una sola réplica, la síncrona detiene las escrituras del primario si PC3 cae. Se acepta perder las últimas transacciones si PC2 cae antes de enviarlas; en la red local eso son milisegundos. |
+| **Slot** `replica_pc3` | Sin slot (`wal_keep_size`) | El primario guarda el WAL que la réplica no ha recibido, así que PC3 se pone al día sola tras una caída corta. El costo es que el WAL crece en PC2 mientras PC3 esté abajo. |
+| Failover **manual** (`pg_promote()`) | Automático (Patroni, repmgr) | Con dos nodos no hay mayoría para decidir quién es primario, y un failover automático puede dejar dos primarios si solo se corta la red. Además, la promoción manual es la que se muestra en la demo. |
+| `pg_hba.conf` acepta replicación **desde cualquier origen** | Restringir a la IP de PC3 | Con Docker Desktop la conexión de la otra PC suele llegar con una IP interna del motor de Docker, no la de PC3. Se compensa con la contraseña de `replicator`, el firewall y la red local (decisión 14). |
+
+La regla de `pg_hba.conf` la agrega `postgres/init/02_pg_hba_replicacion.sh` en el primer arranque del primario, y la réplica la recibe con la copia. Por eso, si PC3 se promueve, ya acepta réplicas sin cambiar nada. Los parámetros (`wal_level=replica`, `max_wal_senders`, `max_replication_slots`, `hot_standby`) están en el `command` de los dos compose, con los mismos valores.
+
+El rol `replicator` (`LOGIN REPLICATION`, sin permisos sobre las tablas) y el slot se crean con `postgres/scripts/03_replicacion.sql`.
+
+#### Evidencia
+
+Ensayo en la simulación local (`infra/simulacion/postgres.yml`):
+
+| Prueba | Resultado |
+|---|---|
+| `pg_basebackup` de PC2 a PC3 | 47,678 kB copiados |
+| `pg_stat_replication` en PC2 | `streaming`, `async` |
+| `pg_is_in_recovery()` en PC3 | `t` |
+| Particiones en PC3 | Las 8, con 10,000 asientos cada una y la misma poda que en el primario |
+| `INSERT` en PC3 | `cannot execute INSERT in a read-only transaction` |
+| `docker stop` de PC2 y `pg_promote()` en PC3 | `pg_is_in_recovery()` = `f` y el `INSERT` se acepta |
+| PC2 de regreso como réplica de PC3 | Una fila insertada en PC3 aparece en PC2 y el `INSERT` en PC2 se rechaza |
+
+Falta repetirlo en la red real entre PCs y cronometrar la caída con la API y el simulador en marcha.
 
 ## 4. MongoDB
 
