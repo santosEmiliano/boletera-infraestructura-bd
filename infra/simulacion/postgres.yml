@@ -1,0 +1,66 @@
+# Simulación en una sola máquina de PostgreSQL en PC2 (primario) y PC3 (réplica),
+# para ensayar la replicación y el failover antes de usar las PCs reales.
+#
+# Diferencias con infra/pc2 y infra/pc3:
+# - Los dos contenedores están en la misma red de Docker. Los servicios se llaman
+#   pc2 y pc3, así que esos nombres se resuelven solos y no hacen falta IPs ni
+#   extra_hosts. Los comandos de replicación son los mismos que en la red real.
+# - Cada uno tiene su volumen y su puerto (5433 y 5434), para no chocar entre
+#   ellos ni con otro PostgreSQL de la máquina en 5432.
+name: boletera-sim
+
+x-postgres: &postgres
+  image: postgres:16
+  command:
+    - postgres
+    - -c
+    - wal_level=replica
+    - -c
+    - max_wal_senders=10
+    - -c
+    - max_replication_slots=10
+    - -c
+    - hot_standby=on
+    - -c
+    - listen_addresses=*
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U postgres -d boletera"]
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 30s
+
+services:
+  pc2:
+    <<: *postgres
+    container_name: sim-pc2
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en infra/simulacion/.env}
+      POSTGRES_DB: boletera
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_pc2:/var/lib/postgresql/data
+      - ../../postgres/init:/docker-entrypoint-initdb.d:ro
+      - ../../postgres/scripts:/scripts:ro
+
+  # Igual que infra/pc3: sin init ni POSTGRES_PASSWORD. Su volumen se llena con
+  # pg_basebackup antes de levantarlo.
+  pc3:
+    <<: *postgres
+    container_name: sim-pc3
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata_pc3:/var/lib/postgresql/data
+      - ../../postgres/scripts:/scripts:ro
+
+volumes:
+  pgdata_pc2:
+    name: boletera_sim_pgdata_pc2
+  pgdata_pc3:
+    name: boletera_sim_pgdata_pc3
+
+networks:
+  default:
+    name: boletera_sim

@@ -80,7 +80,233 @@ Se crean el día 3, ya con el grupo formado. Las contraseñas van en `.env`, nun
 
 ## 3. PostgreSQL
 
-_Pendiente: esquema, partición por sede, justificación y evidencia de `EXPLAIN`._
+### 3.1 Qué guarda y por qué PostgreSQL
+
+Sedes, zonas, funciones, asientos, reservas y movimientos de inventario: el inventario de lugares. Es la parte del sistema con más competencia, porque en una preventa cientos de compradores intentan apartar los mismos asientos al mismo tiempo.
+
+PostgreSQL da el control de concurrencia que esto necesita. La reserva es una sola sentencia, `UPDATE ... WHERE estado = 'libre' RETURNING`: si dos compras piden el mismo asiento, la segunda espera a que termine la primera y, al volver a evaluar la condición, ya no lo encuentra libre. Además tiene particionado declarativo para la fragmentación horizontal y Streaming Replication.
+
+### 3.2 Esquema
+
+Base `boletera`, seis tablas. El script completo está en `postgres/init/01_schema.sql`.
+
+| Tabla | Descripción |
+|---|---|
+| `sedes` | Las 4 sedes: Aguascalientes, Ciudad de México, Guadalajara y Monterrey. |
+| `zonas` | 10 por sede, con nombre y precio base. |
+| `funciones` | 10 por sede. Cada una es una fecha de un evento en una sede. |
+| `asientos` | 1,000 por función, con estado `libre`, `reservado` o `vendido`. **Particionada por sede.** |
+| `reservas_asiento` | Asientos apartados mientras se cobra; vencen a los 10 minutos. **Particionada por sede.** |
+| `movimientos_inventario` | Bitácora de cada cambio de estado de un asiento: `reserva`, `venta` o `liberacion`. |
+
+```mermaid
+erDiagram
+    sedes ||--o{ zonas : tiene
+    sedes ||--o{ funciones : programa
+    sedes ||--o{ asientos : contiene
+    funciones ||--o{ asientos : ofrece
+    zonas ||--o{ asientos : agrupa
+    asientos ||--o{ reservas_asiento : "se aparta en"
+    asientos ||--o{ movimientos_inventario : registra
+```
+
+La llave de un asiento es `(sede_id, asiento_id)`, con `asiento_id` del 1 al 10,000 dentro de cada sede. MySQL guarda esa misma pareja en `orden_detalle` y `boletos`.
+
+`funciones.evento_id` (MongoDB) y `reservas_asiento.orden_id` (MySQL) son **referencias lógicas**: no tienen llave foránea y la API valida que existan.
+
+Estados de una reserva:
+
+| Estado | Significado |
+|---|---|
+| `activa` | Asiento apartado, esperando el pago. |
+| `confirmada` | Se pagó y el asiento quedó `vendido`. |
+| `expirada` | No se pagó en 10 minutos; el asiento volvió a `libre`. |
+| `cancelada` | Se rechazó el pago; el asiento volvió a `libre`. |
+
+### 3.3 Fragmentación horizontal
+
+Las tablas `asientos` y `reservas_asiento` se dividen por filas según la sede, con particionado declarativo `PARTITION BY LIST (sede_id)`:
+
+| Sede | `asientos` | `reservas_asiento` |
+|---|---|---|
+| 1, Aguascalientes | `asientos_ags` | `reservas_ags` |
+| 2, Ciudad de México | `asientos_cdmx` | `reservas_cdmx` |
+| 3, Guadalajara | `asientos_gdl` | `reservas_gdl` |
+| 4, Monterrey | `asientos_mty` | `reservas_mty` |
+
+La API y las consultas usan la tabla madre; PostgreSQL manda cada fila a su partición según su `sede_id`.
+
+Justificación del criterio:
+
+1. **Cada sede opera por separado.** Una función pertenece a una sola sede, así que una compra nunca mezcla asientos de dos sedes.
+2. **Toda consulta filtra por sede.** El contrato de la API pide `sede_id` al listar asientos y al comprar, así que PostgreSQL solo lee la partición que toca (*partition pruning*) y deja de lado las otras tres.
+3. **Índices más chicos.** Cada partición tiene sus propios índices, con la cuarta parte de las filas.
+4. **Cada sede se puede manejar aparte.** Una partición se puede respaldar, limpiar o separar (`DETACH PARTITION`) sin tocar las demás. Esto permite la mejora opcional de llevar las sedes 3 y 4 a otro servidor.
+
+Se eligió partición **por lista** porque la sede es un valor fijo de un conjunto pequeño. La partición por rango sirve para valores continuos, como fechas, y la partición por hash reparte las filas de forma pareja, pero no permite saber en qué partición está cada sede.
+
+Solo se particionan estas dos tablas porque son las grandes y las que reciben la carga de la preventa. Las tablas de catálogo tienen pocas decenas de filas.
+
+**Restricción de PostgreSQL:** la llave primaria y cualquier `UNIQUE` de una tabla particionada deben incluir la columna de partición, porque cada partición solo puede garantizar unicidad dentro de sí misma. Por eso la llave es `(sede_id, asiento_id)` y no solo `asiento_id`.
+
+#### Evidencia
+
+Se obtiene con `postgres/scripts/01_verificar_particiones.sql`, que solo lee y también se puede correr en la réplica. La salida de abajo es con los datos del seed (sección 3.5).
+
+Particiones y la sede que guarda cada una:
+
+```
+      tabla       |   particion   |      valores
+------------------+---------------+--------------------
+ asientos         | asientos_ags  | FOR VALUES IN ('1')
+ asientos         | asientos_cdmx | FOR VALUES IN ('2')
+ asientos         | asientos_gdl  | FOR VALUES IN ('3')
+ asientos         | asientos_mty  | FOR VALUES IN ('4')
+ reservas_asiento | reservas_ags  | FOR VALUES IN ('1')
+ reservas_asiento | reservas_cdmx | FOR VALUES IN ('2')
+ reservas_asiento | reservas_gdl  | FOR VALUES IN ('3')
+ reservas_asiento | reservas_mty  | FOR VALUES IN ('4')
+```
+
+Filas por partición:
+
+```
+   particion   | filas            particion   | filas
+---------------+-------         ---------------+-------
+ asientos_ags  | 10000           reservas_ags  |  4951
+ asientos_cdmx | 10000           reservas_cdmx |  4934
+ asientos_gdl  | 10000           reservas_gdl  |  4816
+ asientos_mty  | 10000           reservas_mty  |  4974
+```
+
+**Con `sede_id`**, `EXPLAIN SELECT * FROM asientos WHERE sede_id = 2` solo lee `asientos_cdmx`:
+
+```
+ Seq Scan on asientos_cdmx asientos
+   Filter: (sede_id = 2)
+```
+
+Recorre la partición completa porque todas sus filas son de la sede 2: leerla de corrido es más rápido que pasar por un índice. Las otras tres particiones ni se abren.
+
+**Sin `sede_id`**, `EXPLAIN SELECT * FROM asientos WHERE funcion_id = 1` tiene que revisar las cuatro particiones (`Append`), aunque la función 1 solo existe en Aguascalientes:
+
+```
+ Append
+   ->  Bitmap Heap Scan on asientos_ags asientos_1
+         Recheck Cond: (funcion_id = 1)
+         ->  Bitmap Index Scan on asientos_ags_funcion_id_estado_idx
+               Index Cond: (funcion_id = 1)
+   ->  Index Scan using asientos_cdmx_funcion_id_estado_idx on asientos_cdmx asientos_2
+         Index Cond: (funcion_id = 1)
+   ->  Index Scan using asientos_gdl_funcion_id_estado_idx on asientos_gdl asientos_3
+         Index Cond: (funcion_id = 1)
+   ->  Index Scan using asientos_mty_funcion_id_estado_idx on asientos_mty asientos_4
+         Index Cond: (funcion_id = 1)
+```
+
+Tres de esas cuatro lecturas no encuentran nada. Por eso la API siempre manda `sede_id`.
+
+`reservas_asiento` se comporta igual: con `sede_id = 2` solo lee `reservas_cdmx`.
+
+### 3.4 Zonas, funciones y asientos
+
+Cada sede tiene **10 zonas** (40 en total) y **10 funciones** (40 en total). Cada función ofrece 1,000 asientos, y la zona de un asiento depende de su posición dentro de la función, en bloques de 100:
+
+| # | Zona | Posición en la función | Precio base |
+|---|---|---|---|
+| 1 | VIP Pista | 1 a 100 | $2,500 |
+| 2 | VIP Lateral | 101 a 200 | $2,000 |
+| 3 | Platino | 201 a 300 | $1,800 |
+| 4 | Oro | 301 a 400 | $1,500 |
+| 5 | Preferente A | 401 a 500 | $1,200 |
+| 6 | Preferente B | 501 a 600 | $1,000 |
+| 7 | General A | 601 a 700 | $850 |
+| 8 | General B | 701 a 800 | $700 |
+| 9 | Balcón A | 801 a 900 | $500 |
+| 10 | Balcón B | 901 a 1,000 | $400 |
+
+Las cuatro sedes usan las mismas 10 zonas. El seed las inserta en orden de sede (las 10 de la sede 1, luego las de la sede 2, y así), de modo que `zona_id` va del 1 al 40.
+
+Con eso, todo se calcula a partir de `(sede_id, asiento_id)`:
+
+| Dato | Fórmula | Ejemplo: sede 2, asiento 1,350 |
+|---|---|---|
+| Función | `(sede_id - 1) * 10 + ceil(asiento_id / 1000)` | 12 |
+| Posición en la función | `(asiento_id - 1) % 1000 + 1` | 350 |
+| Zona | `(sede_id - 1) * 10 + ceil(posición / 100)` | 14 (Oro de la sede 2) |
+
+La relación entre funciones y asientos es la misma que usa el seed de MySQL: la función `f` es de la sede `ceil(f / 10)` y usa los asientos `((f - 1) % 10) * 1000 + 1` a `+ 1000` de esa sede.
+
+**Por qué así.** El plan acordado pedía unas 40 zonas (10 por sede). Los bloques de 100 permiten que los seeds de PostgreSQL y MySQL calculen la misma zona y el mismo precio solo con la posición del asiento, sin consultarse entre sí. La rúbrica no pide un número de zonas.
+
+**Pendiente de coordinar:** el seed de MySQL (`mysql/seed/seed.js`) usa hoy 4 zonas (VIP, Preferente, General y Balcón). Para que `orden_detalle.zona` y `orden_detalle.precio` coincidan con esta tabla, hay que cambiar su arreglo `ZONAS` por estas 10 y volver a correr el seed.
+
+### 3.5 Datos de prueba
+
+El seed está en `postgres/seed` (uso y detalle en su README). Se corre **después** del seed de MySQL, porque lee sus órdenes: cada asiento que aparece en una orden queda en PostgreSQL con el estado que le corresponde, así los dos motores coinciden.
+
+| Orden en MySQL | Asiento | Reserva | Movimientos |
+|---|---|---|---|
+| `pagada` | `vendido` | `confirmada` | `reserva` y `venta` |
+| `cancelada` | `libre` | `cancelada` | `reserva` y `liberacion` |
+| `expirada` | `libre` | `expirada` | `reserva` y `liberacion` |
+| `pendiente` | `reservado` | `activa` | `reserva` |
+
+| Tabla | Filas |
+|---|---|
+| `sedes` | 4 |
+| `zonas` | 40 |
+| `funciones` | 40 |
+| `asientos` | 40,000 |
+| `reservas_asiento` | 19,675 |
+| `movimientos_inventario` | 38,330 |
+| **Total** | **98,089** |
+
+Se comprobó contra el seed de MySQL: los 15,713 asientos de órdenes pagadas son los 15,713 `vendido` y las 15,713 reservas `confirmada` de PostgreSQL, y coinciden con las 15,713 filas de `boletos`. Los 1,020 de órdenes pendientes son los 1,020 `reservado` y las 1,020 reservas `activa`.
+
+### 3.6 Usuarios
+
+Se crean con `postgres/scripts/02_roles.sql`, en el primario; la réplica los recibe por la replicación. Las contraseñas llegan como variables de `psql` (`-v api_clave=... -v exporter_clave=...`) y nunca se guardan en el repositorio.
+
+| Usuario | Permisos | Para qué |
+|---|---|---|
+| `boletera_api` | `SELECT` en todas las tablas; `INSERT` y `UPDATE` en `asientos` y `reservas_asiento`; solo `INSERT` en `movimientos_inventario` | La API. No modifica el catálogo y no puede cambiar ni borrar la bitácora. |
+| `exporter` | `pg_monitor`, máximo 3 conexiones | Métricas para Prometheus. Ve estadísticas, no datos. |
+| `replicator` | `REPLICATION`, sin permisos sobre las tablas | La conexión de la réplica al primario. Se crea con `03_replicacion.sql` (sección 3.7). |
+
+A diferencia del usuario de MySQL, `boletera_api` no tiene `DELETE`: la API nunca borra filas en PostgreSQL. Se comprobó que `INSERT` en `zonas`, `DELETE` en `movimientos_inventario` y `SELECT` en `asientos` como `exporter` dan `permission denied`.
+
+### 3.7 Replicación
+
+Streaming Replication de PC2 (primario) a PC3 (réplica). El procedimiento completo, con el failover y el regreso del primario caído, está en `docs/replicacion-postgres.md`.
+
+| Decisión | Alternativa descartada | Por qué |
+|---|---|---|
+| Replicación **física** | Lógica (`PUBLICATION`/`SUBSCRIPTION`) | La física copia el servidor completo: roles, particiones e índices llegan sin hacer nada en la réplica. La lógica pide crear el esquema a mano en PC3 y no replica los roles. |
+| **Asíncrona** | Síncrona (`synchronous_standby_names`) | Con una sola réplica, la síncrona detiene las escrituras del primario si PC3 cae. Se acepta perder las últimas transacciones si PC2 cae antes de enviarlas; en la red local eso son milisegundos. |
+| **Slot** `replica_pc3` | Sin slot (`wal_keep_size`) | El primario guarda el WAL que la réplica no ha recibido, así que PC3 se pone al día sola tras una caída corta. El costo es que el WAL crece en PC2 mientras PC3 esté abajo. |
+| Failover **manual** (`pg_promote()`) | Automático (Patroni, repmgr) | Con dos nodos no hay mayoría para decidir quién es primario, y un failover automático puede dejar dos primarios si solo se corta la red. Además, la promoción manual es la que se muestra en la demo. |
+| `pg_hba.conf` acepta replicación **desde cualquier origen** | Restringir a la IP de PC3 | Con Docker Desktop la conexión de la otra PC suele llegar con una IP interna del motor de Docker, no la de PC3. Se compensa con la contraseña de `replicator`, el firewall y la red local (decisión 14). |
+
+La regla de `pg_hba.conf` la agrega `postgres/init/02_pg_hba_replicacion.sh` en el primer arranque del primario, y la réplica la recibe con la copia. Por eso, si PC3 se promueve, ya acepta réplicas sin cambiar nada. Los parámetros (`wal_level=replica`, `max_wal_senders`, `max_replication_slots`, `hot_standby`) están en el `command` de los dos compose, con los mismos valores.
+
+El rol `replicator` (`LOGIN REPLICATION`, sin permisos sobre las tablas) y el slot se crean con `postgres/scripts/03_replicacion.sql`.
+
+#### Evidencia
+
+Ensayo en la simulación local (`infra/simulacion/postgres.yml`):
+
+| Prueba | Resultado |
+|---|---|
+| `pg_basebackup` de PC2 a PC3 | 47,678 kB copiados |
+| `pg_stat_replication` en PC2 | `streaming`, `async` |
+| `pg_is_in_recovery()` en PC3 | `t` |
+| Particiones en PC3 | Las 8, con 10,000 asientos cada una y la misma poda que en el primario |
+| `INSERT` en PC3 | `cannot execute INSERT in a read-only transaction` |
+| `docker stop` de PC2 y `pg_promote()` en PC3 | `pg_is_in_recovery()` = `f` y el `INSERT` se acepta |
+| PC2 de regreso como réplica de PC3 | Una fila insertada en PC3 aparece en PC2 y el `INSERT` en PC2 se rechaza |
+
+Falta repetirlo en la red real entre PCs y cronometrar la caída con la API y el simulador en marcha.
 
 ## 4. MongoDB
 
