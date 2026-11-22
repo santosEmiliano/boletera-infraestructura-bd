@@ -1,0 +1,42 @@
+# Réplica de PostgreSQL. El volumen se llena con pg_basebackup desde PC2 antes del
+# primer arranque (ver docs/replicacion-postgres.md); por eso no monta
+# postgres/init ni lleva POSTGRES_PASSWORD. Si se levanta con el volumen vacío,
+# el contenedor se detiene en vez de crear una base nueva que no es réplica.
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres-pc3
+    restart: unless-stopped
+    # Los mismos parámetros que el primario: si PC3 se promueve, ya puede
+    # aceptar réplicas sin reiniciar.
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
+      - -c
+      - listen_addresses=*
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../../postgres/scripts:/scripts:ro
+    extra_hosts:
+      - "pc1:${PC1_IP}"
+      - "pc2:${PC2_IP}"
+      - "pc3:${PC3_IP}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d boletera"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  pgdata:
+    name: boletera_pgdata
