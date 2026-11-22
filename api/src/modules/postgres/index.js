@@ -133,3 +133,69 @@ export async function reservarAsientos({ sedeId, funcionId, ordenId, asientos })
     }
   }
 }
+
+// Paso 5 de la compra: la orden se pagó. Reservas 'confirmada', asientos
+// 'vendido' y un movimiento 'venta' por asiento.
+// Repetirla después de un corte devuelve true sin duplicar movimientos.
+// Devuelve false si la orden ya no tiene reservas activas (expiró o se canceló):
+// el orquestador no debe emitir boletos.
+export function confirmarVenta({ sedeId, ordenId }) {
+  return enTransaccion(async (c) => {
+    const { rows } = await c.query(
+      `UPDATE reservas_asiento SET estado = 'confirmada'
+        WHERE sede_id = $1 AND orden_id = $2 AND estado = 'activa'
+      RETURNING asiento_id::int`,
+      [sedeId, ordenId],
+    );
+    if (rows.length === 0) {
+      const { rows: previas } = await c.query(
+        'SELECT DISTINCT estado FROM reservas_asiento WHERE sede_id = $1 AND orden_id = $2',
+        [sedeId, ordenId],
+      );
+      return previas.length === 1 && previas[0].estado === 'confirmada';
+    }
+
+    const ids = rows.map((r) => r.asiento_id);
+    await c.query(
+      `UPDATE asientos SET estado = 'vendido'
+        WHERE sede_id = $1 AND asiento_id = ANY($2::bigint[]) AND estado = 'reservado'`,
+      [sedeId, ids],
+    );
+    await c.query(
+      `INSERT INTO movimientos_inventario (sede_id, asiento_id, tipo)
+       SELECT $1, unnest($2::bigint[]), 'venta'`,
+      [sedeId, ids],
+    );
+    return true;
+  });
+}
+
+// Compensación cuando el pago se rechaza (402): reservas 'cancelada', asientos
+// de vuelta a 'libre' y un movimiento 'liberacion' por asiento.
+// Solo toca reservas activas: nunca deshace una venta confirmada, y repetirla
+// no duplica nada. Devuelve cuántos asientos liberó.
+// En un 409 no hace falta: reservarAsientos ya hizo ROLLBACK.
+export function liberarReserva({ sedeId, ordenId }) {
+  return enTransaccion(async (c) => {
+    const { rows } = await c.query(
+      `UPDATE reservas_asiento SET estado = 'cancelada'
+        WHERE sede_id = $1 AND orden_id = $2 AND estado = 'activa'
+      RETURNING asiento_id::int`,
+      [sedeId, ordenId],
+    );
+    if (rows.length === 0) return 0;
+
+    const { rows: libres } = await c.query(
+      `UPDATE asientos SET estado = 'libre'
+        WHERE sede_id = $1 AND asiento_id = ANY($2::bigint[]) AND estado = 'reservado'
+      RETURNING asiento_id::int`,
+      [sedeId, rows.map((r) => r.asiento_id)],
+    );
+    await c.query(
+      `INSERT INTO movimientos_inventario (sede_id, asiento_id, tipo)
+       SELECT $1, unnest($2::bigint[]), 'liberacion'`,
+      [sedeId, libres.map((r) => r.asiento_id)],
+    );
+    return libres.length;
+  });
+}
