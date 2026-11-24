@@ -21,6 +21,56 @@ services:
       retries: 12
       start_period: 20s
 
+  # Cada shard es un replica set con un miembro en cada PC: si una PC se cae,
+  # los dos shards siguen funcionando con los otros dos.
+  mongo-shard-a:
+    image: mongo:7.0
+    container_name: mongo-shard-a-pc2
+    restart: unless-stopped
+    command: ["mongod", "--shardsvr", "--replSet", "shardA", "--port", "27018",
+              "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
+    ports:
+      - "27018:27018"
+    volumes:
+      - mongo_shard_a:/data/db
+      - ../../mongo/scripts:/scripts:ro
+    extra_hosts:
+      - "pc1:${PC1_IP}"
+      - "pc2:${PC2_IP}"
+      - "pc3:${PC3_IP}"
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --port 27018 --quiet --eval 'db.adminCommand({ping: 1}).ok' | grep -q 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  mongo-shard-b:
+    image: mongo:7.0
+    container_name: mongo-shard-b-pc2
+    restart: unless-stopped
+    command: ["mongod", "--shardsvr", "--replSet", "shardB", "--port", "27020",
+              "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
+    ports:
+      - "27020:27020"
+    volumes:
+      - mongo_shard_b:/data/db
+      - ../../mongo/scripts:/scripts:ro
+    extra_hosts:
+      - "pc1:${PC1_IP}"
+      - "pc2:${PC2_IP}"
+      - "pc3:${PC3_IP}"
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --port 27020 --quiet --eval 'db.adminCommand({ping: 1}).ok' | grep -q 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
 volumes:
   mongo_cfg:
     name: boletera_mongo_cfg
+  mongo_shard_a:
+    name: boletera_mongo_shard_a
+  mongo_shard_b:
+    name: boletera_mongo_shard_b
