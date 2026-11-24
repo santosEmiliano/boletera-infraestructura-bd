@@ -33,6 +33,6 @@ Las referencias entre motores solo funcionan si los tres seeds usan estas reglas
 - **Función `f` (1 a 40):** está en la sede `ceil(f / 10)` y corresponde al evento número `f`.
 - **Asientos:** la función `f` usa los 1,000 asientos que empiezan en `((f - 1) % 10) * 1000 + 1` dentro de su sede. Por ejemplo, la función 1 usa del 1 al 1000 de la sede 1, y la función 12 usa del 1001 al 2000 de la sede 2.
 - **`evento_id`:** es el número del evento escrito en hexadecimal y rellenado con ceros hasta 24 caracteres (evento 11 = `00000000000000000000000b`). El seed de MongoDB debe insertar los eventos con ese `_id`.
-- **Zonas por función**, según la posición del asiento: VIP (primeros 100, $1,800), Preferente (hasta el 350, $1,200), General (hasta el 700, $850) y Balcón (el resto, $500).
+- **Zonas por función:** 10 bloques de 100 asientos según su posición dentro de la función, los mismos que carga el seed de PostgreSQL (tabla en `docs/arquitectura.md`, sección 3.4): VIP Pista $2,500, VIP Lateral $2,000, Platino $1,800, Oro $1,500, Preferente A $1,200, Preferente B $1,000, General A $850, General B $700, Balcón A $500 y Balcón B $400. `orden_detalle.zona` y `orden_detalle.precio` salen de esa tabla.
 
 Ningún asiento se repite en las órdenes, ni siquiera entre las canceladas.
