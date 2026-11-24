@@ -239,7 +239,7 @@ La relación entre funciones y asientos es la misma que usa el seed de MySQL: la
 
 **Por qué así.** El plan acordado pedía unas 40 zonas (10 por sede). Los bloques de 100 permiten que los seeds de PostgreSQL y MySQL calculen la misma zona y el mismo precio solo con la posición del asiento, sin consultarse entre sí. La rúbrica no pide un número de zonas.
 
-**Pendiente de coordinar:** el seed de MySQL (`mysql/seed/seed.js`) usa hoy 4 zonas (VIP, Preferente, General y Balcón). Para que `orden_detalle.zona` y `orden_detalle.precio` coincidan con esta tabla, hay que cambiar su arreglo `ZONAS` por estas 10 y volver a correr el seed.
+El seed de MySQL usa estas mismas 10 zonas: `orden_detalle.zona` y `orden_detalle.precio` coinciden con esta tabla.
 
 ### 3.5 Datos de prueba
 

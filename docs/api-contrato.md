@@ -52,7 +52,7 @@ Parámetro obligatorio: `evento_id`.
     "funcion_id": 12,
     "evento_id": "66f1a2b3c4d5e6f708192a3b",
     "sede_id": 2,
-    "sede": "Guadalajara",
+    "sede": "Ciudad de Mexico",
     "fecha": "2026-12-05T20:00:00Z",
     "asientos_libres": 640
   }
@@ -65,8 +65,8 @@ Parámetro obligatorio: `sede_id`. Se pide siempre porque PostgreSQL reparte los
 
 ```json
 [
-  { "asiento_id": 15, "zona": "General", "precio": 850.00 },
-  { "asiento_id": 16, "zona": "General", "precio": 850.00 }
+  { "asiento_id": 15, "zona": "General A", "precio": 850.00 },
+  { "asiento_id": 16, "zona": "General A", "precio": 850.00 }
 ]
 ```
 
