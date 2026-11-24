@@ -3,13 +3,19 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { ErrorHttp, noEncontrado, peticionInvalida } from '../errores.js';
 
-const SEDES = { 1: 'Ciudad de México', 2: 'Guadalajara', 3: 'Monterrey', 4: 'Aguascalientes' };
+const SEDES = { 1: 'Aguascalientes', 2: 'Ciudad de Mexico', 3: 'Guadalajara', 4: 'Monterrey' };
 const CATEGORIAS = ['concierto', 'teatro', 'deportes', 'festival'];
 const ZONAS = [
-  { nombre: 'VIP', hasta: 100, precio: 1800 },
-  { nombre: 'Preferente', hasta: 350, precio: 1200 },
-  { nombre: 'General', hasta: 700, precio: 850 },
-  { nombre: 'Balcón', hasta: 1000, precio: 500 },
+  { nombre: 'VIP Pista', precio: 2500 },
+  { nombre: 'VIP Lateral', precio: 2000 },
+  { nombre: 'Platino', precio: 1800 },
+  { nombre: 'Oro', precio: 1500 },
+  { nombre: 'Preferente A', precio: 1200 },
+  { nombre: 'Preferente B', precio: 1000 },
+  { nombre: 'General A', precio: 850 },
+  { nombre: 'General B', precio: 700 },
+  { nombre: 'Balcón A', precio: 500 },
+  { nombre: 'Balcón B', precio: 400 },
 ];
 
 const vendidos = new Set();
@@ -22,7 +28,7 @@ const numeroDeEvento = (id) => parseInt(id, 16);
 const sedeDe = (f) => Math.ceil(f / 10);
 const asientoId = (f, pos) => ((f - 1) % 10) * 1000 + pos + 1;
 const posDeAsiento = (f, asiento) => asiento - 1 - ((f - 1) % 10) * 1000;
-const zonaDe = (pos) => ZONAS.find((z) => pos < z.hasta);
+const zonaDe = (pos) => ZONAS[Math.floor(pos / 100)];
 
 export const existeCliente = (id) => id >= 1 && id <= 8000;
 export const existeEvento = (id) => numeroDeEvento(id) >= 1 && numeroDeEvento(id) <= 600;
