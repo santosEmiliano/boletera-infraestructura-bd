@@ -13,12 +13,18 @@ const eventoId = (n) => n.toString(16).padStart(24, '0');
 const asientoId = (f, pos) => ((f - 1) % 10) * ASIENTOS_POR_FUNCION + pos + 1;
 
 const ZONAS = [
-  { nombre: 'VIP', hasta: 100, precio: 1800 },
-  { nombre: 'Preferente', hasta: 350, precio: 1200 },
-  { nombre: 'General', hasta: 700, precio: 850 },
-  { nombre: 'Balcón', hasta: 1000, precio: 500 },
+  { nombre: 'VIP Pista', precio: 2500 },
+  { nombre: 'VIP Lateral', precio: 2000 },
+  { nombre: 'Platino', precio: 1800 },
+  { nombre: 'Oro', precio: 1500 },
+  { nombre: 'Preferente A', precio: 1200 },
+  { nombre: 'Preferente B', precio: 1000 },
+  { nombre: 'General A', precio: 850 },
+  { nombre: 'General B', precio: 700 },
+  { nombre: 'Balcón A', precio: 500 },
+  { nombre: 'Balcón B', precio: 400 },
 ];
-const zonaDe = (pos) => ZONAS.find((z) => pos < z.hasta);
+const zonaDe = (pos) => ZONAS[Math.floor(pos / 100)];
 
 const limpiar = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
 
