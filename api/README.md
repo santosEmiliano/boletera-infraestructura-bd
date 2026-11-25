@@ -11,7 +11,7 @@ cp .env.example .env     # y ajustar las claves
 npm start
 ```
 
-`npm test` corre las pruebas de los endpoints y no necesita bases de datos. Las pruebas del modulo de MySQL no se realizan de normal a menos que se pida porque usan la base de datos real y borran lo que crean.
+`npm test` corre las pruebas de los endpoints y del orquestador de la compra, que usan bases de datos falsas en memoria (`test-utils/falsos.js`) y no necesitan nada instalado. Las pruebas de los módulos de cada base no se realizan de normal a menos que se pida porque usan la base de datos real y borran lo que crean.
 
 ```bash
 PRUEBAS_BD=1 MYSQL_HOST=pc1 MYSQL_PASSWORD=... npm test
@@ -25,9 +25,15 @@ PRUEBAS_BD=1 PG_HOST=pc2 PG_USER=postgres PG_PASSWORD=... node --test test/postg
 
 La prueba de expiración también vence cualquier otra reserva vencida de la base, igual que la API al arrancar.
 
+`test/acceso.test.js` (escaneo de boletos) y `test/compra.integracion.test.js` (la compra completa, con cinco compras simultáneas del mismo asiento) usan las tres bases a la vez y necesitan permiso de `DELETE` en MySQL y PostgreSQL:
+
+```bash
+PRUEBAS_BD=1 MYSQL_USER=... MYSQL_PASSWORD=... PG_USER=postgres PG_PASSWORD=... MONGO_URI=... node --test test/compra.integracion.test.js
+```
+
 ## Estado
 
-Por ahora los endpoints responden con datos de ejemplo guardados en memoria (`src/stubs/datos.js`), para que el simulador pueda empezar a probar. Todos los datos siguen el contrato, validan la petición, un asiento vendido da 409 y los clientes con número múltiplo de 50 siempre reciben 402. Los datos se pierden al reiniciar.
+Los endpoints ya usan las tres bases. `POST /api/compras` corre el proceso de `docs/compras.md` (reserva, cobro simulado, confirmación y compensaciones). El cobro es simulado: los clientes con número múltiplo de 50 siempre reciben 402.
 
 Ya se tiene:
 
@@ -35,7 +41,7 @@ Ya se tiene:
 - `/metrics` publica `compras_total`, `compra_duracion_segundos` y `http_peticiones_total`, además de las métricas de Node.
 - Las conexiones: un pool de MySQL, un pool de PostgreSQL (20) y el cliente de MongoDB, en `src/db.js`.
 
-El módulo de MySQL (`src/modules/mysql`) lo llamará el orquestador de la compra. Sus funciones son `obtenerCliente`, `crearOrden`, `registrarPago`, `marcarOrdenPagada`, `cancelarOrden`, `expirarOrden`, `emitirBoletos` y `marcarBoletoUsado`.
+El módulo de MySQL (`src/modules/mysql`) lo usa el orquestador de la compra (`src/compras.js`). Sus funciones son `obtenerCliente`, `crearOrden`, `registrarPago`, `marcarOrdenPagada`, `cancelarOrden`, `expirarOrden`, `emitirBoletos` y `marcarBoletoUsado`.
 
 El módulo de PostgreSQL (`src/modules/postgres`) también lo llamará el orquestador. Todas sus consultas sobre asientos y reservas llevan `sede_id`, para que PostgreSQL solo lea la partición de esa sede.
 
@@ -67,6 +73,9 @@ src/
   routes/         salud.js (/health, /metrics) y api.js (/api/...)
   modules/mysql/  operaciones sobre MySQL (órdenes, pagos, boletos)
   modules/postgres/  inventario de asientos y expiración de reservas
-  stubs/          datos de ejemplo, temporales
+  modules/mongo/  eventos, actividad, notificaciones, reseñas y bitácora de accesos
+  compras.js      orquestador de la compra, con reintentos y compensaciones
+  servicios.js    los tres módulos reales, que recibe la app
 test/             pruebas con node:test
+test-utils/       bases de datos falsas en memoria para las pruebas
 ```
