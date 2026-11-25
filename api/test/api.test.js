@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearApp } from '../src/app.js';
-import { eventoId } from '../src/stubs/datos.js';
+import { crearFalsos, eventoId } from '../test-utils/falsos.js';
 
 let servidor;
 let base;
@@ -13,7 +13,7 @@ before(async () => {
     postgres: async () => {},
     mongo: async () => { if (mongoCaido) throw new Error('caído'); },
   };
-  servidor = crearApp({ pings }).listen(0);
+  servidor = crearApp({ pings, servicios: crearFalsos() }).listen(0);
   await new Promise((r) => servidor.once('listening', r));
   base = `http://localhost:${servidor.address().port}`;
 });

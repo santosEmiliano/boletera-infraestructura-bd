@@ -2,16 +2,17 @@ import express from 'express';
 import { ErrorHttp } from './errores.js';
 import { medirPeticiones } from './metricas.js';
 import { rutasSalud } from './routes/salud.js';
-import api from './routes/api.js';
+import { crearRutasApi } from './routes/api.js';
 import { pings as pingsReales } from './db.js';
+import { servicios as serviciosReales } from './servicios.js';
 
-export function crearApp({ pings = pingsReales } = {}) {
+export function crearApp({ pings = pingsReales, servicios = serviciosReales } = {}) {
   const app = express();
   app.use(medirPeticiones);
   app.use(express.json());
 
   app.use(rutasSalud(pings));
-  app.use('/api', api);
+  app.use('/api', crearRutasApi(servicios));
 
   app.use((req, res) => res.status(404).json({ error: 'ruta_no_encontrada' }));
 
