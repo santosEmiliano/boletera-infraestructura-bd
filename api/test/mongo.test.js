@@ -6,7 +6,7 @@ import * as modulo from '../src/modules/mongo/index.js';
 
 // Las pruebas necesitan un MongoDB y borran lo que crean, se corre con
 //  PRUEBAS_BD=1 MONGO_URI=... npm test
-// registrarAcceso sí necesita MySQL con el esquema cargado.
+// registrarAcceso, que también usa MySQL, se prueba en acceso.test.js.
 const omitir = process.env.PRUEBAS_BD !== '1' && 'define PRUEBAS_BD=1 para correrlas';
 
 const cliente = 987654321;
@@ -28,7 +28,6 @@ after(async () => {
   for (const c of ['resenas', 'actividad_usuarios', 'notificaciones']) {
     await db().collection(c).deleteMany({ cliente_id: cliente });
   }
-  await db().collection('bitacora_accesos').deleteMany({ puerta: 'prueba-automatica' });
   await mongo.close();
 });
 
