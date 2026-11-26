@@ -14,8 +14,14 @@ services:
       - ../../mysql/conf/pc1.cnf:/etc/mysql/conf.d/boletera.cnf:ro
       - ../../mysql/scripts:/scripts:ro
       - ../../mysql/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      red:
+        ipv4_address: 172.28.0.10
     extra_hosts:
-      - "pc1:${PC1_IP}"
+      # Su propio nombre apunta a la IP del contenedor: Group Replication solo
+      # acepta en local_address una dirección que sea suya. Los otros nodos
+      # llegan por la IP física y el puerto publicado.
+      - "pc1:172.28.0.10"
       - "pc2:${PC2_IP}"
       - "pc3:${PC3_IP}"
     healthcheck:
@@ -24,6 +30,13 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
+
+networks:
+  red:
+    name: boletera_red_mysql
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
 
 volumes:
   mysql_data:

@@ -17,3 +17,6 @@ loose-group_replication_group_seeds="pc1:33061,pc2:33061,pc3:33061"
 loose-group_replication_start_on_boot=OFF
 loose-group_replication_bootstrap_group=OFF
 loose-group_replication_recovery_get_public_key=ON
+# Las conexiones de los otros nodos llegan reenviadas por Docker Desktop desde
+# su red interna; sin esto el grupo las rechaza
+loose-group_replication_ip_allowlist="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1/8"
