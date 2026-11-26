@@ -1,0 +1,91 @@
+# Simulación en una sola máquina del cluster de MongoDB de las tres PCs, para
+# ensayar los replica sets, el sharding y la caída de una PC antes de usar la red.
+#
+# Diferencias con infra/pc1, infra/pc2 e infra/pc3:
+# - Cada "PC" es un solo contenedor que corre sus tres mongod (cfgRS en 27019,
+#   shardA en 27018 y shardB en 27020), igual que cada PC real. Así, detener un
+#   contenedor equivale a apagar una PC: se caen sus tres miembros a la vez.
+# - Los servicios se llaman pc1, pc2 y pc3 y están en la misma red de Docker, así
+#   que esos nombres se resuelven solos: los scripts de mongo/scripts se usan sin
+#   cambios y no hacen falta IPs ni extra_hosts.
+# - mongos va en su propio contenedor. Se publica en 27027 para no chocar con otro
+#   MongoDB de la máquina en 27017. Los shards no se publican: se entra con
+#   docker exec.
+# - Es un proyecto aparte del de PostgreSQL (boletera-sim), para que levantar o
+#   bajar uno no toque al otro.
+name: boletera-sim-mongo
+
+# Los dos primeros mongod se quedan en segundo plano (--fork) y el último toma el
+# lugar del proceso principal (exec), así el contenedor vive mientras él viva.
+x-pc: &pc
+  image: mongo:7.0
+  command:
+    - bash
+    - -c
+    - |
+      mkdir -p /data/cfg /data/shardA /data/shardB
+      mongod --configsvr --replSet cfgRS --port 27019 --bind_ip_all \
+        --dbpath /data/cfg --wiredTigerCacheSizeGB 0.25 \
+        --fork --logpath /data/cfg/mongod.log
+      mongod --shardsvr --replSet shardA --port 27018 --bind_ip_all \
+        --dbpath /data/shardA --wiredTigerCacheSizeGB 0.25 \
+        --fork --logpath /data/shardA/mongod.log
+      exec mongod --shardsvr --replSet shardB --port 27020 --bind_ip_all \
+        --dbpath /data/shardB --wiredTigerCacheSizeGB 0.25
+  healthcheck:
+    test: ["CMD-SHELL", "for p in 27019 27018 27020; do mongosh --port $$p --quiet --eval 'db.adminCommand({ping: 1}).ok' | grep -q 1 || exit 1; done"]
+    interval: 10s
+    timeout: 15s
+    retries: 12
+    start_period: 20s
+
+services:
+  pc1:
+    <<: *pc
+    container_name: sim-mongo-pc1
+    hostname: pc1
+    volumes:
+      - mongo_pc1:/data
+      - ../../mongo/scripts:/scripts:ro
+
+  pc2:
+    <<: *pc
+    container_name: sim-mongo-pc2
+    hostname: pc2
+    volumes:
+      - mongo_pc2:/data
+      - ../../mongo/scripts:/scripts:ro
+
+  pc3:
+    <<: *pc
+    container_name: sim-mongo-pc3
+    hostname: pc3
+    volumes:
+      - mongo_pc3:/data
+      - ../../mongo/scripts:/scripts:ro
+
+  mongos:
+    image: mongo:7.0
+    container_name: sim-mongos
+    command: ["mongos", "--configdb", "cfgRS/pc1:27019,pc2:27019,pc3:27019",
+              "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27027:27017"
+    volumes:
+      - ../../mongo/scripts:/scripts:ro
+    depends_on:
+      - pc1
+      - pc2
+      - pc3
+
+volumes:
+  mongo_pc1:
+    name: boletera_sim_mongo_pc1
+  mongo_pc2:
+    name: boletera_sim_mongo_pc2
+  mongo_pc3:
+    name: boletera_sim_mongo_pc3
+
+networks:
+  default:
+    name: boletera_sim_mongo
