@@ -1,9 +1,10 @@
-import mysql from 'mysql2/promise';
 import pg from 'pg';
 import { MongoClient } from 'mongodb';
 import { config } from './config.js';
+import { crearPoolMysql } from './mysql-primario.js';
 
-export const mysqlPool = mysql.createPool({ ...config.mysql, connectionLimit: 10, connectTimeout: 2000, decimalNumbers: true });
+const { hosts, ...conexionMysql } = config.mysql;
+export const mysqlPool = crearPoolMysql(conexionMysql, { hosts });
 
 export const pgPool = new pg.Pool({ ...config.postgres, max: 20, connectionTimeoutMillis: 2000 });
 pgPool.on('error', (e) => console.error('postgres:', e.message));

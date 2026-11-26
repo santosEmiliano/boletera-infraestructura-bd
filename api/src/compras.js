@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { ErrorHttp, noEncontrado, peticionInvalida } from './errores.js';
 
 const CODIGOS_TRANSITORIOS = new Set([
-  'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE',
+  'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE', 'EHOSTUNREACH', 'ENOTFOUND', 'EAI_AGAIN',
   'PROTOCOL_CONNECTION_LOST', 'ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT',
+  // Se escribió en un nodo que dejó de ser el primario; ya se buscó el nuevo
+  'ER_OPTION_PREVENTS_STATEMENT',
   '40001', '40P01', '57P01',
 ]);
 const ERRORES_MONGO = new Set(['MongoNetworkError', 'MongoNetworkTimeoutError', 'MongoServerSelectionError']);
