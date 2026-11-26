@@ -125,3 +125,42 @@ Los registros muestran `PostgreSQL: no hay un primario disponible (pc2: ...; pc3
 ## MongoDB
 
 Los config servers (`cfgRS`) se reincorporan solos al reiniciar. Ver `docs/mongo-config-servers.md`.
+
+## MongoDB: cae un miembro de un shard o una PC completa
+
+Cada shard (`shardA` y `shardB`) es un replica set con un miembro en cada PC, igual que `cfgRS`. Si se cae una PC, se caen a la vez sus tres miembros, y cada replica set sigue con los otros dos, que son mayoría.
+
+**Qué pasa solo**
+
+1. Si el miembro caído era secundario, no cambia nada.
+2. Si era primario, los otros dos eligen uno nuevo en unos segundos.
+3. `mongos` se entera del primario nuevo y manda ahí las operaciones; la API no nota nada más que esos segundos.
+4. Al volver, la PC se reincorpora como `SECONDARY` y se pone al día sola. El primario no regresa a ella.
+
+No hay que ejecutar nada.
+
+**Cómo comprobar**
+
+```bash
+docker exec -it mongos-pc2 mongosh --port 27017 --file /scripts/05_estado_sharding.js
+```
+
+Cada shard debe tener un `PRIMARY`; los miembros de la PC caída salen como `(not reachable/healthy)`. Justo después del `docker stop` pueden salir todavía como `SECONDARY`: los miembros se revisan cada 2 segundos, así que hay que esperar unos 15 antes de mirar.
+
+**Lo que se midió** (simulación local, `infra/simulacion/mongo.yml`): con PC1 apagada se insertaron 1,000 documentos más sin error; al apagar PC3, que tenía los primarios de los dos shards, `shardA` eligió primario en PC2 y `shardB` en PC1; las dos PCs volvieron como `SECONDARY`. Detalle en `docs/mongo-sharding.md`.
+
+**Si se caen dos PCs**, los replica sets se quedan sin mayoría: no hay primario y no se aceptan escrituras hasta que vuelva una de las dos. Se levanta y se reincorpora sola.
+
+## MongoDB: cae mongos
+
+`mongos` corre solo en PC2. Sin él, la API no tiene a dónde conectarse aunque los datos sigan completos en los shards: la validación del evento falla y las compras responden 500. Las reseñas también fallan. El escaneo en la puerta sigue funcionando, porque lo decide MySQL, pero ese acceso no queda en `bitacora_accesos` (se avisa en consola).
+
+`mongos` no guarda datos, así que basta con levantarlo:
+
+```bash
+docker compose -f infra/pc2/mongo.yml up -d mongos
+```
+
+En cuanto responde, la API vuelve a funcionar sin reiniciarse (el driver de Mongo se reconecta solo).
+
+Si lo que se cayó es **PC2 completa**, se pierden a la vez `mongos` y el primario de PostgreSQL. Los shards siguen con PC1 y PC3, pero hace falta un `mongos` en otra PC para que la API los alcance. Es una limitación conocida: no hay un segundo `mongos`. No se ha ensayado.
