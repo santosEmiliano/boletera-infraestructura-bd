@@ -80,6 +80,8 @@ source /scripts/03_usuarios.sql
 
 Esto último también pasa al reiniciar una PC: los nodos no se reincorporan solos (`start_on_boot=OFF`), hay que ejecutar `START GROUP_REPLICATION;` en cada uno. Si se reinician los tres a la vez, se vuelve a arrancar el grupo con `02_arrancar_grupo.sql` en un solo nodo, y después se unen los otros dos.
 
+La API busca al primario por su cuenta cuando recibe los tres nodos en `MYSQL_HOSTS=pc1,pc2,pc3`. Qué hacer en cada falla: `docs/procedimientos-falla.md`.
+
 ## Problemas que ya aparecieron
 
 **`This member has more executed transactions than those present in the group`.** Al arrancar por primera vez, la imagen de MySQL carga las tablas de zonas horarias con el registro binario activo, y cada nodo queda con cinco transacciones propias que el grupo no conoce. Se evita con `MYSQL_INITDB_SKIP_TZINFO=1`, que ya está en los `mysql.yml`. Si ocurre con un volumen viejo, hay que borrarlo y volver a crearlo.

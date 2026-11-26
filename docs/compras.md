@@ -81,6 +81,6 @@ El escaneo de boletos (`POST /api/accesos`) no se reintenta: si el boleto ya se 
 
 ## Límites conocidos
 
-- Una orden puede quedar `pendiente` sin reserva si falla `cancelarOrden` tras un 409 o un 402, o si `crearOrden` se reintenta después de que MySQL sí guardó la primera. No hay un proceso que las limpie.
+- Una orden puede quedar `pendiente` sin reserva si falla `cancelarOrden` tras un 409 o un 402, o si `crearOrden` se reintenta después de que MySQL sí guardó la primera. No hay un proceso que las limpie. Esto último pasó en el ensayo de failover: una orden duplicada, sin pagos, por cada 6,000 compras hechas mientras caía el primario. El asiento no se vende dos veces; solo queda esa orden.
 - Si MySQL cae justo después de que PostgreSQL confirmó la venta (paso 5) y se agotan los reintentos, los asientos quedan `vendido` sin boletos. Resolverlo pediría un proceso que reconcilie las dos bases; no está hecho.
-- La API se conecta a un solo host de MySQL. Si el primario del grupo cambia, las escrituras fallan hasta que se reinicie la API apuntando al nuevo primario o se decida cómo repartir las conexiones (reintento entre nodos o MySQL Router).
+- Si cambia el primario de MySQL, las compras en curso esperan a que el grupo elija uno nuevo (unos 5 segundos) y siguen. Cómo se encuentra el primario y qué hacer si no aparece: `docs/procedimientos-falla.md`.

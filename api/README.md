@@ -11,7 +11,9 @@ cp .env.example .env     # y ajustar las claves
 npm start
 ```
 
-`npm test` corre las pruebas de los endpoints y del orquestador de la compra, que usan bases de datos falsas en memoria (`test-utils/falsos.js`) y no necesitan nada instalado. Las pruebas de los módulos de cada base no se realizan de normal a menos que se pida porque usan la base de datos real y borran lo que crean.
+`MYSQL_HOSTS` lleva los tres nodos del grupo de MySQL. La API pregunta a cada uno cuál es el primario, al arrancar y cada 2 segundos, y cambia sola si el primario cambia (`src/mysql-primario.js`). Con un solo nodo en la lista funciona igual, sin failover. `boletera_api` necesita el permiso sobre `performance_schema.replication_group_members` que da `mysql/scripts/03_usuarios.sql`.
+
+`npm test` corre las pruebas de los endpoints, del orquestador de la compra y del cambio de primario, que usan bases de datos falsas en memoria (`test-utils/falsos.js`) y no necesitan nada instalado. Las pruebas de los módulos de cada base no se realizan de normal a menos que se pida porque usan la base de datos real y borran lo que crean.
 
 ```bash
 PRUEBAS_BD=1 MYSQL_HOST=pc1 MYSQL_PASSWORD=... npm test
@@ -67,6 +69,7 @@ src/
   app.js          middleware y rutas
   config.js       variables de entorno
   db.js           conexiones a los tres motores
+  mysql-primario.js  pool de MySQL que busca al primario del grupo
   metricas.js     métricas de Prometheus
   errores.js      errores con código HTTP
   validar.js      validación de las peticiones
