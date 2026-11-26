@@ -19,5 +19,8 @@ simulator/     simulador de transacciones
 ## Dónde empezar
 
 - `docs/arquitectura.md`: qué corre en cada PC y por qué.
+- `docs/arranque-red.md`: el orden para levantar todo en las tres PCs, con lo que se comprueba en cada fase.
+- `docs/procedimientos-falla.md`: qué hacer cuando algo falla.
+- `docs/inventario.md`: cada servicio con su PC, puerto, versión, contenedor y volumen.
 
 Las contraseñas y variables de entorno van en `.env` (no se versiona); cada carpeta de `infra/` tendrá su `.env.example`.

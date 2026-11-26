@@ -67,6 +67,30 @@ services:
       retries: 12
       start_period: 20s
 
+  # Segundo router, igual al de PC2. La API recibe los dos en MONGO_URI y, si
+  # uno cae (o cae la PC2 completa), el driver sigue por el otro sin reiniciarse.
+  # No guarda datos, así que no lleva volumen.
+  mongos:
+    image: mongo:7.0
+    container_name: mongos-pc1
+    restart: unless-stopped
+    command: ["mongos", "--configdb", "cfgRS/pc1:27019,pc2:27019,pc3:27019",
+              "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - ../../mongo/scripts:/scripts:ro
+    extra_hosts:
+      - "pc1:${PC1_IP}"
+      - "pc2:${PC2_IP}"
+      - "pc3:${PC3_IP}"
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --port 27017 --quiet --eval 'db.adminCommand({ping: 1}).ok' | grep -q 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
 volumes:
   mongo_cfg:
     name: boletera_mongo_cfg

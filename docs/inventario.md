@@ -30,13 +30,13 @@ Nada se ha levantado todavía en la red real entre las tres PCs.
 | Mongo config server | PC1, PC2, PC3 | 27019 | 7.0 | mongo-cfg-pcX | boletera_mongo_cfg | Miembro de cfgRS | probado en simulación |
 | Mongo shardA | PC1, PC2, PC3 | 27018 | 7.0 | mongo-shard-a-pcX | boletera_mongo_shard_a | Miembro de shardA | probado en simulación |
 | Mongo shardB | PC1, PC2, PC3 | 27020 | 7.0 | mongo-shard-b-pcX | boletera_mongo_shard_b | Miembro de shardB | probado en simulación |
-| mongos | PC2 | 27017 | 7.0 | mongos-pc2 | | Enrutador | probado en simulación |
+| mongos | PC2 y PC1 | 27017 | 7.0 | mongos-pc2, mongos-pc1 | | Enrutador (dos, la API usa los dos) | probado en simulación |
 | `mysqld_exporter` | PC1, PC2, PC3 | 9104 | v0.21.0 | mysqld-exporter-pcX | | Métricas de MySQL | probado en local |
 | `postgres_exporter` | PC2, PC3 | 9187 | v0.15.0 | postgres-exporter-pcX | | Métricas de PostgreSQL | probado en simulación |
 | `mongodb_exporter` shardA | PC1, PC2, PC3 | 9216 | 0.40 (Percona) | mongodb-exporter-shard-a-pcX | | Métricas del miembro de shardA | probado en simulación |
 | `mongodb_exporter` shardB | PC1, PC2, PC3 | 9217 | 0.40 (Percona) | mongodb-exporter-shard-b-pcX | | Métricas del miembro de shardB | probado en simulación |
-| `node_exporter` | PC1 (y cualquier Linux) | 9100 | | sin contenedor | | Métricas del sistema | pendiente |
-| `windows_exporter` | PC3 | 9182 | | sin contenedor | | Métricas del sistema | pendiente |
+| `node_exporter` | las PCs con Mac o Linux (hoy PC1) | 9100 | | sin contenedor | | Métricas del sistema | pendiente |
+| `windows_exporter` | las PCs con Windows (hoy PC2 y PC3) | 9182 | | sin contenedor | | Métricas del sistema | pendiente |
 | Prometheus | PC1 | 9090 | v3.16.0 | prometheus | boletera_prometheus_data | Monitoreo | probado en local |
 | Grafana | PC1 | 3000 | 13.3.0 | grafana | boletera_grafana_data | Monitoreo | probado en local |
 | API Express | PC1 | 4000 | Node.js | sin contenedor (`npm start`) | | Backend | probado en local |

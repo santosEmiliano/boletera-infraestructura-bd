@@ -8,9 +8,9 @@
 # - Los servicios se llaman pc1, pc2 y pc3 y están en la misma red de Docker, así
 #   que esos nombres se resuelven solos: los scripts de mongo/scripts se usan sin
 #   cambios y no hacen falta IPs ni extra_hosts.
-# - mongos va en su propio contenedor. Se publica en 27027 para no chocar con otro
-#   MongoDB de la máquina en 27017. Los shards no se publican: se entra con
-#   docker exec.
+# - Los dos mongos (el de PC2 y el de PC1) van en sus propios contenedores. Se
+#   publican en 27027 y 27028 para no chocar con otro MongoDB de la máquina en
+#   27017. Los shards no se publican: se entra con docker exec.
 # - Es un proyecto aparte del de PostgreSQL (boletera-sim), para que levantar o
 #   bajar uno no toque al otro.
 name: boletera-sim-mongo
@@ -76,6 +76,28 @@ services:
     # mongos no abre el puerto hasta conectarse a cfgRS, que se inicia a mano
     # con 01_iniciar_config.js. Hasta entonces sale "starting"; con "healthy"
     # ya se puede correr el 04.
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ping: 1}).ok' | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+    depends_on:
+      - pc1
+      - pc2
+      - pc3
+
+  # Segundo router, como el de PC1 en la red real. Se publica en 27028. Sirve
+  # para ensayar la caída de un mongos con el cliente conectado a los dos.
+  mongos2:
+    image: mongo:7.0
+    container_name: sim-mongos2
+    command: ["mongos", "--configdb", "cfgRS/pc1:27019,pc2:27019,pc3:27019",
+              "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27028:27017"
+    volumes:
+      - ../../mongo/scripts:/scripts:ro
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ping: 1}).ok' | grep -q 1"]
       interval: 5s

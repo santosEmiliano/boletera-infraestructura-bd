@@ -153,14 +153,22 @@ Cada shard debe tener un `PRIMARY`; los miembros de la PC caída salen como `(no
 
 ## MongoDB: cae mongos
 
-`mongos` corre solo en PC2. Sin él, la API no tiene a dónde conectarse aunque los datos sigan completos en los shards: la validación del evento falla y las compras responden 500. Las reseñas también fallan. El escaneo en la puerta sigue funcionando, porque lo decide MySQL, pero ese acceso no queda en `bitacora_accesos` (se avisa en consola).
+Hay dos `mongos`, en PC2 y en PC1, y la API los tiene a los dos en `MONGO_URI` (`mongodb://pc2:27017,pc1:27017/boletera`).
 
-`mongos` no guarda datos, así que basta con levantarlo:
+**Qué pasa solo**
+
+Si cae uno, el driver de Mongo de la API manda todo al otro, sin reiniciarse. Una escritura que estaba en camino al que cayó se reintenta sola en el otro (el driver reintenta las escrituras una vez por omisión).
+
+**Lo que se midió** (simulación, `sim-mongos` y `sim-mongos2`): un cliente con los dos en la URI insertó un documento cada 200 ms durante 30 s; con `docker stop` de uno a media corrida, salieron las 150 inserciones sin ningún error.
+
+**Qué hacer a mano**
+
+Volver a levantar el que cayó, para recuperar el respaldo. No guarda datos, así que basta con:
 
 ```bash
-docker compose -f infra/pc2/mongo.yml up -d mongos
+docker compose -f infra/pcX/mongo.yml up -d mongos
 ```
 
-En cuanto responde, la API vuelve a funcionar sin reiniciarse (el driver de Mongo se reconecta solo).
+**Si caen los dos**, la API no tiene a dónde conectarse aunque los datos sigan completos en los shards: la validación del evento falla y las compras responden 500. Las reseñas también fallan. El escaneo en la puerta sigue funcionando, porque lo decide MySQL, pero ese acceso no queda en `bitacora_accesos` (se avisa en consola). En cuanto uno responde, la API vuelve sola.
 
-Si lo que se cayó es **PC2 completa**, se pierden a la vez `mongos` y el primario de PostgreSQL. Los shards siguen con PC1 y PC3, pero hace falta un `mongos` en otra PC para que la API los alcance. Es una limitación conocida: no hay un segundo `mongos`. No se ha ensayado.
+**Si cae PC2 completa**, se van a la vez su `mongos` y el primario de PostgreSQL. Mongo sigue por el `mongos` de PC1 y los shards con PC1 y PC3; PostgreSQL necesita el `pg_promote()` de PC3 (arriba). No se ha ensayado en la red real.

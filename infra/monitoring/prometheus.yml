@@ -2,9 +2,16 @@ global:
   scrape_interval: 5s
 
 scrape_configs:
+  # CPU, RAM y disco de cada PC. El exporter depende del sistema operativo:
+  # node_exporter (9100) en Mac o Linux, windows_exporter (9182) en Windows.
+  # Cada PC va en la lista de su sistema; si cambia la máquina de una PC, se mueve
+  # su línea y se recarga Prometheus (docs/monitoreo.md).
   - job_name: sistema
     static_configs:
-      - targets: ['pc1:9100', 'pc2:9100', 'pc3:9182']
+      - targets: ['pc1:9100']
+        labels: {so: mac-linux}
+      - targets: ['pc2:9182', 'pc3:9182']
+        labels: {so: windows}
 
   - job_name: mysql
     static_configs:

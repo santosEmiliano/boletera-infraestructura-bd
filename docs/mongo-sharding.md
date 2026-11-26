@@ -7,9 +7,9 @@ El cluster reparte los documentos de cada colección entre dos shards, `shardA` 
 | `cfgRS` (config servers) | 27019 | PC1, PC2 y PC3 |
 | `shardA` | 27018 | PC1, PC2 y PC3 |
 | `shardB` | 27020 | PC1, PC2 y PC3 |
-| `mongos` | 27017 | PC2 |
+| `mongos` | 27017 | PC2 y PC1 |
 
-Todo está en `infra/pcX/mongo.yml`. El de PC2 es el único que lleva `mongos`.
+Todo está en `infra/pcX/mongo.yml`. Los de PC2 y PC1 llevan `mongos`: los dos son iguales y la API recibe los dos (`MONGO_URI=mongodb://pc2:27017,pc1:27017/boletera`). Si uno cae, el driver sigue por el otro sin reiniciarse. Los scripts se corren en el de PC2 (`mongos-pc2`), pero funcionan igual en cualquiera.
 
 ## Levantar
 
@@ -89,11 +89,11 @@ Se caen a la vez sus tres miembros: el de `cfgRS`, el de `shardA` y el de `shard
 - `mongos` se entera solo de quién es el primario nuevo y las lecturas y escrituras siguen.
 - Al volver, la PC se reincorpora como `SECONDARY` y se pone al día sola. El primario no regresa a ella.
 
-Si se caen dos PCs, los replica sets se quedan sin mayoría y dejan de aceptar escrituras hasta que vuelva una. Si la que se cae es PC2, se pierde `mongos` y la API no tiene a dónde conectarse aunque los datos sigan completos en PC1 y PC3.
+Si se caen dos PCs, los replica sets se quedan sin mayoría y dejan de aceptar escrituras hasta que vuelva una. Si la que se cae es PC2 o PC1, con ella se va uno de los dos `mongos`; la API sigue por el otro.
 
 ## Simulación en una sola máquina
 
-`infra/simulacion/mongo.yml` levanta tres contenedores, `pc1`, `pc2` y `pc3`, que corren cada uno sus tres `mongod`, más un contenedor de `mongos`. Detener un contenedor equivale a apagar una PC. Los scripts se usan sin cambios; solo cambian los nombres de los contenedores:
+`infra/simulacion/mongo.yml` levanta tres contenedores, `pc1`, `pc2` y `pc3`, que corren cada uno sus tres `mongod`, más dos contenedores de `mongos` (`sim-mongos` y `sim-mongos2`, como los de PC2 y PC1). Detener un contenedor equivale a apagar una PC. Los scripts se usan sin cambios; solo cambian los nombres de los contenedores:
 
 ```bash
 cd infra/simulacion
@@ -108,7 +108,7 @@ docker exec -it sim-mongos mongosh --file /scripts/05_estado_sharding.js
 
 Antes del 04, `docker compose -f mongo.yml ps` tiene que mostrar `sim-mongos` como `healthy`: no lo estará hasta que se inicie `cfgRS`.
 
-`mongos` se publica en el puerto 27027 de la máquina, para no chocar con otro MongoDB en 27017. Para borrar todo, incluidos los datos de prueba:
+Los `mongos` se publican en los puertos 27027 y 27028 de la máquina, para no chocar con otro MongoDB en 27017. Para borrar todo, incluidos los datos de prueba:
 
 ```bash
 docker compose -f mongo.yml down -v
@@ -130,6 +130,7 @@ Ensayo en la simulación, con 10,000 eventos y 10,000 reseñas (500 `evento_id` 
 | `06_indices.js` antes del 04 | Se niega y no crea nada |
 | `06_indices.js` dos veces | Los índices se crean la primera vez; la segunda no cambia nada |
 | 2,000 accesos con QR distintos en `bitacora_accesos` (clave `codigo_qr`) | `shardA` 999, `shardB` 1,001 |
+| Cliente con los dos `mongos` insertando cada 200 ms, `docker stop` de uno a media corrida | 150 de 150 inserciones, sin ningún error |
 | `explain()` de `actividad_usuarios.find({ cliente_id: 5 }).sort({ fecha: -1 })` | `SINGLE_SHARD`: la consulta va solo a `shardA` |
 
 Falta repetirlo en la red real entre PCs, incluida una escritura después de la elección de primario.

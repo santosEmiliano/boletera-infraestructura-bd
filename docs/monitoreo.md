@@ -13,13 +13,44 @@ Prometheus y Grafana corren en PC1. Se ven desde cualquier PC en `http://pc1:909
 | Prometheus (v3.16.0) | PC1 | 9090 | listo |
 | Grafana (13.3.0) | PC1 | 3000 | listo |
 | `mysqld_exporter` (v0.21.0) | PC1, PC2, PC3 | 9104 | listo |
-| `node_exporter` | PC1 (Mac) y cualquier Linux | 9100 | pendiente de instalar |
-| `windows_exporter` | PC3 (Windows) | 9182 | pendiente de instalar |
+| `node_exporter` | las PCs con Mac o Linux (hoy PC1) | 9100 | pendiente de instalar |
+| `windows_exporter` | las PCs con Windows (hoy PC2 y PC3) | 9182 | pendiente de instalar |
 | `postgres_exporter` (v0.15.0) | PC2 y PC3 | 9187 | listo |
 | `mongodb_exporter` (Percona 0.40) | las tres PCs | 9216 (shardA), 9217 (shardB) | listo |
 | API | PC1 | 4000 (`/metrics`) | cuando exista la API |
 
 Los exporters del sistema (CPU, RAM, disco) se instalan directo en el sistema operativo, no en Docker. En Mac y Windows, Docker corre dentro de una máquina virtual y un exporter dentro de Docker mediría la máquina virtual, no la PC.
+
+## Exporter del sistema según la PC
+
+Cuál se instala depende del sistema operativo de la máquina que haga de cada PC, no del número de PC. En `infra/monitoring/prometheus.yml`, el job `sistema` tiene una lista para Mac o Linux (puerto 9100) y otra para Windows (9182). Si una PC se cambia a una máquina con otro sistema, se mueve su línea a la otra lista y se reinicia Prometheus:
+
+```bash
+docker compose -f infra/pc1/monitoring.yml restart prometheus
+```
+
+**Windows (`windows_exporter`).** Descargar el instalador `.msi` de la versión más reciente para `amd64` desde la página de *releases* de `prometheus-community/windows_exporter` en GitHub e instalarlo. Queda como servicio de Windows, arranca solo con la PC y escucha en el 9182. El puerto lo abre `infra/red/preparar-red-windows.ps1`. Para comprobar, en esa PC:
+
+```powershell
+(Invoke-WebRequest http://localhost:9182/metrics -UseBasicParsing).StatusCode
+```
+
+Debe salir `200`.
+
+**Mac (`node_exporter`).** Con Homebrew:
+
+```bash
+brew install node_exporter
+brew services start node_exporter
+```
+
+Queda como servicio, arranca con la sesión y escucha en el 9100. Si el firewall de macOS está encendido, la primera vez pregunta si `node_exporter` puede recibir conexiones: hay que permitirlo. Para comprobar:
+
+```bash
+curl -s localhost:9100/metrics | head -3
+```
+
+Desde PC1, `http://pc1:9090/targets` debe mostrar las tres PCs del job `sistema` en `UP`, cada una con la etiqueta `so` de su sistema.
 
 ## Levantar
 

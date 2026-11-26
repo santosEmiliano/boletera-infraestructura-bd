@@ -10,7 +10,7 @@ Las IPs son de ejemplo hasta confirmar las reales (ver `inventario.md`).
 
 | PC | Servicios |
 |---|---|
-| PC1 | MySQL nodo 1, Mongo config 1, Mongo shardA nodo 1, Mongo shardB nodo 1, Prometheus, Grafana, API, exporters |
+| PC1 | MySQL nodo 1, Mongo config 1, Mongo shardA nodo 1, Mongo shardB nodo 1, mongos (segundo), Prometheus, Grafana, API, exporters |
 | PC2 | PostgreSQL primario, MySQL nodo 2, Mongo config 2, Mongo shardA nodo 2, Mongo shardB nodo 2, mongos, exporters |
 | PC3 | PostgreSQL réplica, MySQL nodo 3, Mongo config 3, Mongo shardA nodo 3, Mongo shardB nodo 3, exporters |
 
@@ -335,7 +335,7 @@ Los índices extra se crean con `mongo/scripts/06_indices.js`, en `mongos`, desp
 
 ### 4.2 Sharding
 
-Dos shards, `shardA` y `shardB`, cada uno replica set de tres miembros con uno en cada PC. Los config servers (`cfgRS`) son otro replica set igual, y `mongos` corre en PC2. Cómo se levanta, se inicia y se verifica está en `docs/mongo-sharding.md`.
+Dos shards, `shardA` y `shardB`, cada uno replica set de tres miembros con uno en cada PC. Los config servers (`cfgRS`) son otro replica set igual. Hay dos `mongos`, en PC2 y PC1, y la API se conecta a los dos: si uno cae, sigue por el otro. Cómo se levanta, se inicia y se verifica está en `docs/mongo-sharding.md`.
 
 | Decisión | Alternativa descartada | Por qué |
 |---|---|---|
@@ -343,6 +343,7 @@ Dos shards, `shardA` y `shardB`, cada uno replica set de tres miembros con uno e
 | Shard keys **hashed** (decisión 9) | Por rangos, por ejemplo la fecha | El hash reparte parejo aunque la clave crezca siempre hacia el mismo lado. Con rangos por fecha, todo lo nuevo iría al último trozo y un solo shard recibiría todas las escrituras. |
 | **Agregar los dos shards antes de fragmentar**, con las colecciones vacías (decisión 10) | Fragmentar con los datos ya cargados | Con clave hashed y colección vacía, MongoDB crea los trozos iniciales repartidos entre los dos shards. Si se fragmentara con datos o con un solo shard, todo empezaría en uno y habría que esperar al balanceador. El seed va después y por `mongos`. |
 | Shards agregados con sus **tres miembros** | Agregar solo un host | `mongos` conoce el replica set completo y encuentra al primario nuevo cuando cambia. |
+| **Dos `mongos`** (PC2 y PC1) | Uno solo, en PC2 | Con uno, si cae PC2 la API se queda sin Mongo aunque los datos sigan en PC1 y PC3. El segundo no guarda datos y cuesta un proceso más en PC1. |
 
 Clave de cada colección. Además de repartir parejo, la clave conviene que aparezca en las consultas frecuentes: así `mongos` manda la consulta a un solo shard en vez de preguntarle a los dos.
 
