@@ -70,8 +70,19 @@ export function crearPoolPostgres(conexion, {
 
   async function buscar() {
     const limite = Date.now() + esperaMs;
+    // Por qué no respondió cada nodo en la última vuelta (clave equivocada, nodo
+    // apagado...), para que el error final diga la causa
+    const motivos = new Map();
     do {
-      const respuestas = await Promise.all(hosts.map(async (h) => (await esElPrimario(h).catch(() => false)) ? h : null));
+      motivos.clear();
+      const respuestas = await Promise.all(hosts.map(async (h) => {
+        try {
+          return (await esElPrimario(h)) ? h : null;
+        } catch (e) {
+          motivos.set(h, e.message || e.code);
+          return null;
+        }
+      }));
       const primarios = respuestas.filter(Boolean);
       // Dos primarios: el viejo volvió sin reconstruirse como réplica (ver
       // docs/procedimientos-falla.md). Si ya se estaba usando uno de ellos, se
@@ -93,7 +104,11 @@ export function crearPoolPostgres(conexion, {
       }
       await dormir(cadaMs);
     } while (Date.now() < limite);
-    throw Object.assign(new Error('PostgreSQL: no hay un primario disponible'), { code: 'SIN_PRIMARIO' });
+    const detalle = [...motivos].map(([h, m]) => `${h}: ${m}`).join('; ');
+    throw Object.assign(
+      new Error(`PostgreSQL: no hay un primario disponible${detalle ? ` (${detalle})` : ''}`),
+      { code: 'SIN_PRIMARIO' },
+    );
   }
 
   // Varias peticiones fallando a la vez comparten una sola búsqueda
