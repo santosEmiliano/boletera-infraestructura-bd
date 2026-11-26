@@ -49,9 +49,17 @@ docker exec -it mongo-shard-b-pc2 mongosh --port 27020 --file /scripts/03_inicia
 docker exec -it mongos-pc2 mongosh --port 27017 --file /scripts/04_configurar_sharding.js
 ```
 
-El 03 sirve para los dos shards: toma el nombre y el puerto del nodo al que se conecta. El 04 agrega los dos shards y después fragmenta las cinco colecciones, todavía vacías. Los dos se pueden volver a correr: lo que ya está hecho se salta.
+Si sale `ECONNREFUSED`, `mongos` todavía no termina de conectarse a los config servers: esperar unos segundos y repetir.
 
-El seed va después del paso 4 y siempre por `mongos` (`mongodb://pc2:27017/boletera`). Si se insertara antes de fragmentar, todo quedaría en un solo shard.
+5. Crear los índices que no son la shard key (`mongo/seed/modelo.md`):
+
+```bash
+docker exec -it mongos-pc2 mongosh --port 27017 --file /scripts/06_indices.js
+```
+
+El 03 sirve para los dos shards: toma el nombre y el puerto del nodo al que se conecta. El 04 agrega los dos shards y después fragmenta las cinco colecciones, todavía vacías. El 06 se niega a correr si el 04 no se ha corrido, porque crear un índice en una colección que no existe la crearía sin fragmentar. Los tres se pueden volver a correr: lo que ya está hecho se salta.
+
+El seed va después del paso 4 (antes o después del 5) y siempre por `mongos` (`mongodb://pc2:27017/boletera`). Si se insertara antes de fragmentar, todo quedaría en un solo shard.
 
 ## Colecciones y shard keys
 
@@ -94,6 +102,7 @@ docker exec -it sim-mongo-pc1 mongosh --port 27019 --file /scripts/01_iniciar_co
 docker exec -it sim-mongo-pc2 mongosh --port 27018 --file /scripts/03_iniciar_shard.js
 docker exec -it sim-mongo-pc2 mongosh --port 27020 --file /scripts/03_iniciar_shard.js
 docker exec -it sim-mongos mongosh --file /scripts/04_configurar_sharding.js
+docker exec -it sim-mongos mongosh --file /scripts/06_indices.js
 docker exec -it sim-mongos mongosh --file /scripts/05_estado_sharding.js
 ```
 
@@ -116,6 +125,9 @@ Ensayo en la simulación, con 10,000 eventos y 10,000 reseñas (500 `evento_id` 
 | PC1 de regreso | Sus miembros vuelven como `SECONDARY` |
 | `docker stop` de PC3 (primario de los dos shards) | `shardA` elige primario en PC2 y `shardB` en PC1 |
 | PC3 de regreso | Sus miembros vuelven como `SECONDARY`; los primarios se quedan en PC2 y PC1 |
+| `06_indices.js` antes del 04 | Se niega y no crea nada |
+| `06_indices.js` dos veces | Los 4 índices se crean la primera vez; la segunda no cambia nada |
+| `explain()` de `actividad_usuarios.find({ cliente_id: 5 }).sort({ fecha: -1 })` | `SINGLE_SHARD`: la consulta va solo a `shardA` |
 
 Falta repetirlo en la red real entre PCs, incluida una escritura después de la elección de primario.
 
