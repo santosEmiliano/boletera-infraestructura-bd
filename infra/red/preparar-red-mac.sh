@@ -104,7 +104,7 @@ fi
 echo
 echo 'Puertos que reciben conexiones de las otras PCs en esta Mac:'
 echo '    3306, 33061 MySQL | 5432 PostgreSQL | 27018-27020 MongoDB | 9104, 9187, 9216, 9217 exporters'
-[ "$PC" = 2 ] && echo '    27017 mongos'
+[ "$PC" != 3 ] && echo '    27017 mongos'
 [ "$PC" = 1 ] && echo '    9100 node_exporter | 9090 Prometheus | 3000 Grafana | 4000 API'
 ESTADO=$("$FIREWALL" --getglobalstate 2>/dev/null || echo 'desconocido')
 BLOQUEO=$("$FIREWALL" --getblockall 2>/dev/null || echo '')

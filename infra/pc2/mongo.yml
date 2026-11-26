@@ -67,10 +67,10 @@ services:
       retries: 12
       start_period: 20s
 
-  # Router: la API y el seed se conectan aquí (mongodb://pc2:27017). Lee el mapa
-  # de los config servers y manda cada operación al shard que le toca. No guarda
-  # datos, así que no lleva volumen. Si cfgRS todavía no está iniciado, mongos
-  # sigue intentando conectarse hasta que lo esté.
+  # Router: la API y el seed se conectan aquí (y al de PC1, que es igual). Lee el
+  # mapa de los config servers y manda cada operación al shard que le toca. No
+  # guarda datos, así que no lleva volumen. Si cfgRS todavía no está iniciado,
+  # mongos sigue intentando conectarse hasta que lo esté.
   mongos:
     image: mongo:7.0
     container_name: mongos-pc2

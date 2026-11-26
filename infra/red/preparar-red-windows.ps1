@@ -52,8 +52,8 @@ $PUERTOS = [ordered]@{
   '9217'  = 'mongodb_exporter shardB'
   '9182'  = 'windows_exporter'
 }
-# mongos solo corre en PC2; monitoreo y API, en PC1
-if ($Pc -eq 2) { $PUERTOS['27017'] = 'mongos' }
+# mongos corre en PC1 y PC2; monitoreo y API, en PC1
+if ($Pc -ne 3) { $PUERTOS['27017'] = 'mongos' }
 if ($Pc -eq 1) {
   $PUERTOS['9090'] = 'Prometheus'
   $PUERTOS['3000'] = 'Grafana'
