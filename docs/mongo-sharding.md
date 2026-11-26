@@ -68,7 +68,7 @@ El seed va después del paso 4 (antes o después del 5) y siempre por `mongos` (
 | `eventos` | `{ _id: "hashed" }` |
 | `resenas` | `{ evento_id: "hashed" }` |
 | `actividad_usuarios` | `{ cliente_id: "hashed" }` |
-| `bitacora_accesos` | `{ evento_id: "hashed" }` |
+| `bitacora_accesos` | `{ codigo_qr: "hashed" }` |
 | `notificaciones` | `{ cliente_id: "hashed" }` |
 
 Todas son hashed: MongoDB calcula un hash de la clave y reparte por ese hash, así que los documentos quedan parejos entre los dos shards. Con una clave por rangos, como la fecha, todos los documentos nuevos irían al mismo shard. La justificación de cada clave está en `docs/arquitectura.md`, sección 4.
@@ -106,6 +106,8 @@ docker exec -it sim-mongos mongosh --file /scripts/06_indices.js
 docker exec -it sim-mongos mongosh --file /scripts/05_estado_sharding.js
 ```
 
+Antes del 04, `docker compose -f mongo.yml ps` tiene que mostrar `sim-mongos` como `healthy`: no lo estará hasta que se inicie `cfgRS`.
+
 `mongos` se publica en el puerto 27027 de la máquina, para no chocar con otro MongoDB en 27017. Para borrar todo, incluidos los datos de prueba:
 
 ```bash
@@ -126,7 +128,8 @@ Ensayo en la simulación, con 10,000 eventos y 10,000 reseñas (500 `evento_id` 
 | `docker stop` de PC3 (primario de los dos shards) | `shardA` elige primario en PC2 y `shardB` en PC1 |
 | PC3 de regreso | Sus miembros vuelven como `SECONDARY`; los primarios se quedan en PC2 y PC1 |
 | `06_indices.js` antes del 04 | Se niega y no crea nada |
-| `06_indices.js` dos veces | Los 4 índices se crean la primera vez; la segunda no cambia nada |
+| `06_indices.js` dos veces | Los índices se crean la primera vez; la segunda no cambia nada |
+| 2,000 accesos con QR distintos en `bitacora_accesos` (clave `codigo_qr`) | `shardA` 999, `shardB` 1,001 |
 | `explain()` de `actividad_usuarios.find({ cliente_id: 5 }).sort({ fecha: -1 })` | `SINGLE_SHARD`: la consulta va solo a `shardA` |
 
 Falta repetirlo en la red real entre PCs, incluida una escritura después de la elección de primario.
