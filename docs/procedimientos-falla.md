@@ -62,9 +62,65 @@ Sin ese permiso la API no puede preguntar quién es el primario y se comporta co
 
 Si se reinicia el contenedor o la PC de un nodo, vuelve fuera del grupo y con `super_read_only` apagado, así que acepta escrituras de cualquiera que se conecte. La API lo descarta porque solo usa un nodo cuyo rol sea `PRIMARY` y esté `ONLINE`. Se ensayó: con un nodo así como primer host de la API, y reiniciando el primario con carga, la API terminó en un nodo del grupo y el nodo aislado no recibió ninguna orden.
 
-## PostgreSQL
+## PostgreSQL: cae el primario
 
-Pendiente: lo documenta quien administra PostgreSQL (promoción de la réplica de pc3 si cae pc2). La API usa un solo host (`PG_HOST`), así que después de promover hay que cambiarlo y reiniciarla.
+PostgreSQL tiene un primario (PC2) y una réplica de solo lectura (PC3). A diferencia de MySQL y Mongo, **la réplica no se promueve sola**: con dos nodos no hay mayoría que decida, y un failover automático podría dejar dos primarios si solo se corta la red (`docs/arquitectura.md`, sección 3.7). La promoción es el único paso manual.
+
+**Qué pasa solo**
+
+1. Las conexiones a PC2 se cortan. Cada operación de la API busca al primario durante 5 segundos y, como todavía no hay, responde `SIN_PRIMARIO`: las compras fallan con 500.
+2. En cuanto PC3 se promueve, la API lo encuentra sin reiniciarse. Con `PG_HOSTS=pc2,pc3` pregunta `SELECT pg_is_in_recovery()` a cada nodo y cambia sus conexiones al que responde `false` (`api/src/postgres-primario.js`). En los registros aparece `PostgreSQL: el primario ahora es pc3 (antes pc2)`.
+
+**Qué hacer a mano**
+
+1. Confirmar que PC2 de verdad no responde (no es un corte de red de unos segundos). Si PC2 sigue vivo y se promueve PC3, quedan dos primarios.
+2. Promover PC3. Debe salir `t`:
+
+   ```bash
+   docker exec postgres-pc3 psql -U postgres -c "SELECT pg_promote();"
+   ```
+
+3. Comprobar que ya no es réplica (`f`):
+
+   ```bash
+   docker exec postgres-pc3 psql -U postgres -c "SELECT pg_is_in_recovery();"
+   ```
+
+4. **No volver a levantar PC2 tal como estaba.** Se reconstruye como réplica de PC3 (abajo). Si arrancara con sus datos viejos, también diría ser primario.
+
+**Lo que se midió** (simulación local, `api/scripts/sonda-postgres.js` escribiendo cada 100 ms con el pool de la API, `docker stop` del primario y `pg_promote()` unos 10 segundos después): 13 segundos sin escrituras, casi todos de espera antes de promover. Entre el `pg_promote()` y la primera escritura en PC3 pasó menos de un segundo, sin reiniciar la API. Para medirlo en la red real:
+
+```bash
+cd api
+node --env-file=.env scripts/sonda-postgres.js
+```
+
+La sonda necesita un usuario con `CREATE` (por ejemplo `PG_USER=postgres`) y escribe en su propia tabla; al terminar se borra con `DROP TABLE sonda_failover;`.
+
+## PostgreSQL: regresar el viejo primario
+
+PC2 no puede volver a ser primario ni retomar donde se quedó: PC3 siguió escribiendo y las dos historias ya no coinciden. Se copia completo desde PC3 y queda como su réplica. Los comandos están en `docs/replicacion-postgres.md`, "Regresar el viejo primario como réplica":
+
+1. En PC3, crear el slot `replica_pc2`.
+2. En PC2, `docker compose -f infra/pc2/postgres.yml down -v` (los datos de PC2 ya están en PC3).
+3. En PC2, `pg_basebackup` desde `pc3` con el slot `replica_pc2` y levantar.
+4. Comprobar `pg_stat_replication` en PC3 y `pg_is_in_recovery()` = `t` en PC2.
+
+La API no necesita nada: sigue en PC3, y PC2 responde `true` (réplica), así que no lo elige.
+
+## PostgreSQL: la API dice que no hay primario
+
+Los registros muestran `PostgreSQL: no hay un primario disponible (pc2: ...; pc3: ...)`, con la causa de cada nodo.
+
+| Causa en el mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| `ECONNREFUSED`, `timeout` en los dos | Ningún nodo responde | Levantar el que se pueda; si es la réplica, promoverla |
+| Uno responde y el otro no, sin promover | El primario cayó y la réplica sigue siendo réplica | Promover PC3 (arriba) |
+| `password authentication failed` | `PG_USER` o `PG_PASSWORD` equivocados | Corregir el `.env` de la API |
+
+**Dos primarios.** Si el viejo primario volvió sin reconstruirse, los registros muestran `PostgreSQL: hay dos primarios (pc2, pc3)`. Si la API ya estaba usando uno de ellos, se queda con ese; si acaba de arrancar, no elige ninguno, para no escribir en el viejo. En los dos casos: detener el viejo (`docker stop postgres-pc2`) y reconstruirlo como réplica.
+
+**Respaldo manual.** Dejar solo el primario en `PG_HOSTS` (por ejemplo `PG_HOSTS=pc3`) y reiniciar la API. Funciona, pero hay que repetirlo en cada cambio de primario.
 
 ## MongoDB
 
