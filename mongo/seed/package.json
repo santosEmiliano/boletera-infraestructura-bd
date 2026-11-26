@@ -1,0 +1,14 @@
+{
+  "name": "boletera-mongo-seed",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed": "node seed.js"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^10.6.0",
+    "mongodb": "^7.8.0",
+    "mysql2": "^3.24.6"
+  }
+}

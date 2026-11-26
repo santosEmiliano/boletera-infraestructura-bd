@@ -206,7 +206,12 @@ Detalle en `docs/mongo-config-servers.md` y `docs/mongo-sharding.md`.
    docker exec -it mongos-pc2 mongosh --port 27017 --file /scripts/06_indices.js
    ```
 
-6. Datos de Mongo **por `mongos`** (`mongodb://pc2:27017/boletera`), siguiendo `mongo/seed/modelo.md`. _Pendiente: el seed todavía no existe._
+6. Datos de Mongo **por `mongos`**, desde una PC con Node (lee MySQL, así que va después de la fase 4). Detalle en `mongo/seed/README.md`.
+
+   - **Mac:** `cd mongo/seed`, `npm install` y `MONGO_URI=mongodb://pc2:27017/boletera MYSQL_HOST=pc1 MYSQL_PASSWORD=... node seed.js`
+   - **Windows:** `cd mongo\seed`, `npm install`, `$env:MONGO_URI = "mongodb://pc2:27017/boletera"`, `$env:MYSQL_HOST = "pc1"`, `$env:MYSQL_PASSWORD = "..."` y `node seed.js`
+
+   Da unas 55,600 filas entre las cinco colecciones.
 
 **Comprobar:**
 
