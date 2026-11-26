@@ -312,7 +312,26 @@ Falta repetirlo en la red real entre PCs y cronometrar la caída con la API y el
 
 ### 4.1 Colecciones
 
-_Pendiente: documento de ejemplo, campos e índices de cada colección (`mongo/seed/modelo.md`)._
+MongoDB guarda lo que no necesita transacciones entre tablas y cambia de forma según el caso: la cartelera (un concierto lleva artistas y un partido lleva equipos) y los registros que solo se agregan y crecen mucho (reseñas, actividad, accesos en la puerta y notificaciones). Lo que exige consistencia estricta, como el inventario de asientos y las órdenes, está en PostgreSQL y MySQL.
+
+| Colección | Qué guarda | Documentos | Shard key | Índices extra |
+|---|---|---|---|---|
+| `eventos` | Cartelera; `detalle` cambia según la categoría | 600 | `{ _id: "hashed" }` | `{ categoria: 1 }` |
+| `resenas` | Calificación y comentario de un cliente sobre un evento | 15,000 | `{ evento_id: "hashed" }` | — |
+| `actividad_usuarios` | Lo que hace el cliente en la app; `detalle` cambia según el tipo | ~25,000 | `{ cliente_id: "hashed" }` | `{ cliente_id: 1, fecha: -1 }` |
+| `bitacora_accesos` | Cada escaneo en la puerta, válido o no | ~3,000 | `{ evento_id: "hashed" }` | `{ boleto_id: 1 }` |
+| `notificaciones` | Avisos de confirmación, recordatorio, cancelación y expiración | ~12,000 | `{ cliente_id: "hashed" }` | `{ cliente_id: 1, enviada_en: -1 }` |
+
+Unos 55,600 documentos en total. El documento de ejemplo de cada colección, sus campos obligatorios y las reglas para que el seed coincida con MySQL y PostgreSQL están en `mongo/seed/modelo.md`.
+
+| Decisión | Alternativa descartada | Por qué |
+|---|---|---|
+| `_id` de `eventos` como **texto** de 24 caracteres | `ObjectId` | MySQL y PostgreSQL guardan `evento_id` como `VARCHAR(24)` y la API lo recibe como texto. Con `ObjectId`, cada consulta tendría que convertirlo, y una consulta con el tipo equivocado devuelve vacío sin error. |
+| Campo **`detalle`** que cambia según la categoría o el tipo | Una colección por categoría, o todos los campos posibles en cada documento | Un solo lugar para consultar la cartelera, sin campos vacíos. Es la ventaja de Mongo sobre una tabla con esquema fijo. |
+| Los índices extra empiezan por la **shard key** cuando se puede | Índices solo por fecha | Así la consulta lleva la shard key y `mongos` la manda a un solo shard (evidencia en la sección 4.2). |
+| Sin índices únicos además de `_id` | Un cliente, una reseña por evento | En una colección fragmentada solo se puede exigir unicidad si el índice empieza por la shard key, y ninguna regla de la app lo pide. |
+
+Los índices extra se crean con `mongo/scripts/06_indices.js`, en `mongos`, después de fragmentar las colecciones.
 
 ### 4.2 Sharding
 
@@ -339,4 +358,4 @@ Una clave hashed no sirve para consultas por rango de la clave (por ejemplo, `cl
 
 #### Evidencia
 
-En la simulación local (`infra/simulacion/mongo.yml`), con 10,000 eventos y 10,000 reseñas de prueba insertados por `mongos`, `eventos` quedó 50.9 % / 49.0 % y `resenas` 52.0 % / 48.0 % entre `shardA` y `shardB`. Al apagar la PC con los dos primarios, cada shard eligió uno nuevo en las otras PCs sin intervención. El detalle está en `docs/mongo-sharding.md`. Falta repetirlo en la red real.
+En la simulación local (`infra/simulacion/mongo.yml`), con 10,000 eventos y 10,000 reseñas de prueba insertados por `mongos`, `eventos` quedó 50.9 % / 49.0 % y `resenas` 52.0 % / 48.0 % entre `shardA` y `shardB`. Al apagar la PC con los dos primarios, cada shard eligió uno nuevo en las otras PCs sin intervención. Con los índices creados, el `explain()` de `actividad_usuarios.find({ cliente_id: 5 }).sort({ fecha: -1 })` da `SINGLE_SHARD`: la consulta va a un solo shard. El detalle está en `docs/mongo-sharding.md`. Falta repetirlo en la red real.
