@@ -16,3 +16,62 @@ services:
       - "pc1:${PC1_IP}"
       - "pc2:${PC2_IP}"
       - "pc3:${PC3_IP}"
+
+  # Un exporter por miembro de shard, en conexión directa (sin seguir al replica
+  # set): así cada PC reporta su propio miembro y en Grafana se ve cuál es
+  # PRIMARY y cuál SECONDARY. Sin usuario mientras Mongo no tenga auth.
+  mongodb-exporter-shard-a:
+    image: percona/mongodb_exporter:0.40
+    container_name: mongodb-exporter-shard-a-pc2
+    restart: unless-stopped
+    command:
+      - --mongodb.uri=mongodb://pc2:27018
+      - --mongodb.direct-connect
+      - --collector.diagnosticdata
+      - --collector.replicasetstatus
+      - --collector.dbstats
+      - --compatible-mode
+      - --web.listen-address=:9216
+    ports:
+      - "9216:9216"
+    extra_hosts:
+      - "pc1:${PC1_IP}"
+      - "pc2:${PC2_IP}"
+      - "pc3:${PC3_IP}"
+
+  mongodb-exporter-shard-b:
+    image: percona/mongodb_exporter:0.40
+    container_name: mongodb-exporter-shard-b-pc2
+    restart: unless-stopped
+    command:
+      - --mongodb.uri=mongodb://pc2:27020
+      - --mongodb.direct-connect
+      - --collector.diagnosticdata
+      - --collector.replicasetstatus
+      - --collector.dbstats
+      - --compatible-mode
+      - --web.listen-address=:9217
+    ports:
+      - "9217:9217"
+    extra_hosts:
+      - "pc1:${PC1_IP}"
+      - "pc2:${PC2_IP}"
+      - "pc3:${PC3_IP}"
+
+  # Métricas de PostgreSQL con el rol exporter (solo pg_monitor, no lee datos).
+  # El rol se crea en el primario con postgres/scripts/02_roles.sql y llega a la
+  # réplica por la replicación, con la misma clave.
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: postgres-exporter-pc2
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_URI: "pc2:${POSTGRES_PORT:-5432}/boletera?sslmode=disable"
+      DATA_SOURCE_USER: exporter
+      DATA_SOURCE_PASS: ${EXPORTER_PG_PASSWORD}
+    ports:
+      - "9187:9187"
+    extra_hosts:
+      - "pc1:${PC1_IP}"
+      - "pc2:${PC2_IP}"
+      - "pc3:${PC3_IP}"
