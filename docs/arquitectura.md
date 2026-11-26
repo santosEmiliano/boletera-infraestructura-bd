@@ -310,4 +310,33 @@ Falta repetirlo en la red real entre PCs y cronometrar la caída con la API y el
 
 ## 4. MongoDB
 
-_Pendiente: colecciones, shard keys y justificación._
+### 4.1 Colecciones
+
+_Pendiente: documento de ejemplo, campos e índices de cada colección (`mongo/seed/modelo.md`)._
+
+### 4.2 Sharding
+
+Dos shards, `shardA` y `shardB`, cada uno replica set de tres miembros con uno en cada PC. Los config servers (`cfgRS`) son otro replica set igual, y `mongos` corre en PC2. Cómo se levanta, se inicia y se verifica está en `docs/mongo-sharding.md`.
+
+| Decisión | Alternativa descartada | Por qué |
+|---|---|---|
+| **Dos shards** con tres miembros cada uno (decisión 8) | Un solo shard, como en el diagrama | Con un shard el sharding no reparte nada. Con dos, los datos se dividen y cada mitad se copia en las tres PCs, así que se puede perder una PC sin perder datos. Cuesta un `mongod` más por PC. |
+| Shard keys **hashed** (decisión 9) | Por rangos, por ejemplo la fecha | El hash reparte parejo aunque la clave crezca siempre hacia el mismo lado. Con rangos por fecha, todo lo nuevo iría al último trozo y un solo shard recibiría todas las escrituras. |
+| **Agregar los dos shards antes de fragmentar**, con las colecciones vacías (decisión 10) | Fragmentar con los datos ya cargados | Con clave hashed y colección vacía, MongoDB crea los trozos iniciales repartidos entre los dos shards. Si se fragmentara con datos o con un solo shard, todo empezaría en uno y habría que esperar al balanceador. El seed va después y por `mongos`. |
+| Shards agregados con sus **tres miembros** | Agregar solo un host | `mongos` conoce el replica set completo y encuentra al primario nuevo cuando cambia. |
+
+Clave de cada colección. Además de repartir parejo, la clave conviene que aparezca en las consultas frecuentes: así `mongos` manda la consulta a un solo shard en vez de preguntarle a los dos.
+
+| Colección | Shard key | Por qué |
+|---|---|---|
+| `eventos` | `{ _id: "hashed" }` | La cartelera y la validación del evento en la compra buscan por `_id`. El `ObjectId` crece con el tiempo; el hash evita que los eventos nuevos caigan todos en el mismo shard. |
+| `resenas` | `{ evento_id: "hashed" }` | Las reseñas se consultan por evento, y todas las de un evento quedan en el mismo shard. Hay 600 eventos distintos, suficientes para repartir. |
+| `actividad_usuarios` | `{ cliente_id: "hashed" }` | La actividad se consulta por cliente. 8,000 clientes distintos. |
+| `bitacora_accesos` | `{ evento_id: "hashed" }` | Los accesos se cuentan por evento (aforo de la puerta). Mientras un evento está en curso, todos sus escaneos van al mismo shard; se acepta porque son pocos por segundo y el otro shard atiende los demás eventos. |
+| `notificaciones` | `{ cliente_id: "hashed" }` | Las notificaciones se consultan por cliente, igual que la actividad. |
+
+Una clave hashed no sirve para consultas por rango de la clave (por ejemplo, `cliente_id` entre 100 y 200): esas van a los dos shards. Ninguna consulta de la app lo necesita.
+
+#### Evidencia
+
+En la simulación local (`infra/simulacion/mongo.yml`), con 10,000 eventos y 10,000 reseñas de prueba insertados por `mongos`, `eventos` quedó 50.9 % / 49.0 % y `resenas` 52.0 % / 48.0 % entre `shardA` y `shardB`. Al apagar la PC con los dos primarios, cada shard eligió uno nuevo en las otras PCs sin intervención. El detalle está en `docs/mongo-sharding.md`. Falta repetirlo en la red real.
