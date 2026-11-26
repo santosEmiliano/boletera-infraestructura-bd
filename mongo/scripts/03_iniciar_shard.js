@@ -5,7 +5,9 @@
 //   docker exec -it mongo-shard-b-pc2 mongosh --port 27020 --file /scripts/03_iniciar_shard.js
 // Si el shard ya estaba iniciado, avisa y no cambia nada.
 const opciones = db.adminCommand({ getCmdLineOpts: 1 }).parsed;
-const nombre = opciones.replication?.replSetName;
+// Con --replSet en la línea de comandos el campo se llama replSet; en un archivo
+// de configuración se llamaría replSetName. Se aceptan los dos.
+const nombre = opciones.replication?.replSet ?? opciones.replication?.replSetName;
 const puerto = opciones.net.port;
 
 if (opciones.sharding?.clusterRole !== "shardsvr") {
