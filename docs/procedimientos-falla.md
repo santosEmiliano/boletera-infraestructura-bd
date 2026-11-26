@@ -62,10 +62,105 @@ Sin ese permiso la API no puede preguntar quién es el primario y se comporta co
 
 Si se reinicia el contenedor o la PC de un nodo, vuelve fuera del grupo y con `super_read_only` apagado, así que acepta escrituras de cualquiera que se conecte. La API lo descarta porque solo usa un nodo cuyo rol sea `PRIMARY` y esté `ONLINE`. Se ensayó: con un nodo así como primer host de la API, y reiniciando el primario con carga, la API terminó en un nodo del grupo y el nodo aislado no recibió ninguna orden.
 
-## PostgreSQL
+## PostgreSQL: cae el primario
 
-Pendiente: lo documenta quien administra PostgreSQL (promoción de la réplica de pc3 si cae pc2). La API usa un solo host (`PG_HOST`), así que después de promover hay que cambiarlo y reiniciarla.
+PostgreSQL tiene un primario (PC2) y una réplica de solo lectura (PC3). A diferencia de MySQL y Mongo, **la réplica no se promueve sola**: con dos nodos no hay mayoría que decida, y un failover automático podría dejar dos primarios si solo se corta la red (`docs/arquitectura.md`, sección 3.7). La promoción es el único paso manual.
+
+**Qué pasa solo**
+
+1. Las conexiones a PC2 se cortan. Cada operación de la API busca al primario durante 5 segundos y, como todavía no hay, responde `SIN_PRIMARIO`: las compras fallan con 500.
+2. En cuanto PC3 se promueve, la API lo encuentra sin reiniciarse. Con `PG_HOSTS=pc2,pc3` pregunta `SELECT pg_is_in_recovery()` a cada nodo y cambia sus conexiones al que responde `false` (`api/src/postgres-primario.js`). En los registros aparece `PostgreSQL: el primario ahora es pc3 (antes pc2)`.
+
+**Qué hacer a mano**
+
+1. Confirmar que PC2 de verdad no responde (no es un corte de red de unos segundos). Si PC2 sigue vivo y se promueve PC3, quedan dos primarios.
+2. Promover PC3. Debe salir `t`:
+
+   ```bash
+   docker exec postgres-pc3 psql -U postgres -c "SELECT pg_promote();"
+   ```
+
+3. Comprobar que ya no es réplica (`f`):
+
+   ```bash
+   docker exec postgres-pc3 psql -U postgres -c "SELECT pg_is_in_recovery();"
+   ```
+
+4. **No volver a levantar PC2 tal como estaba.** Se reconstruye como réplica de PC3 (abajo). Si arrancara con sus datos viejos, también diría ser primario.
+
+**Lo que se midió** (simulación local, `api/scripts/sonda-postgres.js` escribiendo cada 100 ms con el pool de la API, `docker stop` del primario y `pg_promote()` unos 10 segundos después): 13 segundos sin escrituras, casi todos de espera antes de promover. Entre el `pg_promote()` y la primera escritura en PC3 pasó menos de un segundo, sin reiniciar la API. Para medirlo en la red real:
+
+```bash
+cd api
+node --env-file=.env scripts/sonda-postgres.js
+```
+
+La sonda necesita un usuario con `CREATE` (por ejemplo `PG_USER=postgres`) y escribe en su propia tabla; al terminar se borra con `DROP TABLE sonda_failover;`.
+
+## PostgreSQL: regresar el viejo primario
+
+PC2 no puede volver a ser primario ni retomar donde se quedó: PC3 siguió escribiendo y las dos historias ya no coinciden. Se copia completo desde PC3 y queda como su réplica. Los comandos están en `docs/replicacion-postgres.md`, "Regresar el viejo primario como réplica":
+
+1. En PC3, crear el slot `replica_pc2`.
+2. En PC2, `docker compose -f infra/pc2/postgres.yml down -v` (los datos de PC2 ya están en PC3).
+3. En PC2, `pg_basebackup` desde `pc3` con el slot `replica_pc2` y levantar.
+4. Comprobar `pg_stat_replication` en PC3 y `pg_is_in_recovery()` = `t` en PC2.
+
+La API no necesita nada: sigue en PC3, y PC2 responde `true` (réplica), así que no lo elige.
+
+## PostgreSQL: la API dice que no hay primario
+
+Los registros muestran `PostgreSQL: no hay un primario disponible (pc2: ...; pc3: ...)`, con la causa de cada nodo.
+
+| Causa en el mensaje | Qué significa | Qué hacer |
+|---|---|---|
+| `ECONNREFUSED`, `timeout` en los dos | Ningún nodo responde | Levantar el que se pueda; si es la réplica, promoverla |
+| Uno responde y el otro no, sin promover | El primario cayó y la réplica sigue siendo réplica | Promover PC3 (arriba) |
+| `password authentication failed` | `PG_USER` o `PG_PASSWORD` equivocados | Corregir el `.env` de la API |
+
+**Dos primarios.** Si el viejo primario volvió sin reconstruirse, los registros muestran `PostgreSQL: hay dos primarios (pc2, pc3)`. Si la API ya estaba usando uno de ellos, se queda con ese; si acaba de arrancar, no elige ninguno, para no escribir en el viejo. En los dos casos: detener el viejo (`docker stop postgres-pc2`) y reconstruirlo como réplica.
+
+**Respaldo manual.** Dejar solo el primario en `PG_HOSTS` (por ejemplo `PG_HOSTS=pc3`) y reiniciar la API. Funciona, pero hay que repetirlo en cada cambio de primario.
 
 ## MongoDB
 
 Los config servers (`cfgRS`) se reincorporan solos al reiniciar. Ver `docs/mongo-config-servers.md`.
+
+## MongoDB: cae un miembro de un shard o una PC completa
+
+Cada shard (`shardA` y `shardB`) es un replica set con un miembro en cada PC, igual que `cfgRS`. Si se cae una PC, se caen a la vez sus tres miembros, y cada replica set sigue con los otros dos, que son mayoría.
+
+**Qué pasa solo**
+
+1. Si el miembro caído era secundario, no cambia nada.
+2. Si era primario, los otros dos eligen uno nuevo en unos segundos.
+3. `mongos` se entera del primario nuevo y manda ahí las operaciones; la API no nota nada más que esos segundos.
+4. Al volver, la PC se reincorpora como `SECONDARY` y se pone al día sola. El primario no regresa a ella.
+
+No hay que ejecutar nada.
+
+**Cómo comprobar**
+
+```bash
+docker exec -it mongos-pc2 mongosh --port 27017 --file /scripts/05_estado_sharding.js
+```
+
+Cada shard debe tener un `PRIMARY`; los miembros de la PC caída salen como `(not reachable/healthy)`. Justo después del `docker stop` pueden salir todavía como `SECONDARY`: los miembros se revisan cada 2 segundos, así que hay que esperar unos 15 antes de mirar.
+
+**Lo que se midió** (simulación local, `infra/simulacion/mongo.yml`): con PC1 apagada se insertaron 1,000 documentos más sin error; al apagar PC3, que tenía los primarios de los dos shards, `shardA` eligió primario en PC2 y `shardB` en PC1; las dos PCs volvieron como `SECONDARY`. Detalle en `docs/mongo-sharding.md`.
+
+**Si se caen dos PCs**, los replica sets se quedan sin mayoría: no hay primario y no se aceptan escrituras hasta que vuelva una de las dos. Se levanta y se reincorpora sola.
+
+## MongoDB: cae mongos
+
+`mongos` corre solo en PC2. Sin él, la API no tiene a dónde conectarse aunque los datos sigan completos en los shards: la validación del evento falla y las compras responden 500. Las reseñas también fallan. El escaneo en la puerta sigue funcionando, porque lo decide MySQL, pero ese acceso no queda en `bitacora_accesos` (se avisa en consola).
+
+`mongos` no guarda datos, así que basta con levantarlo:
+
+```bash
+docker compose -f infra/pc2/mongo.yml up -d mongos
+```
+
+En cuanto responde, la API vuelve a funcionar sin reiniciarse (el driver de Mongo se reconecta solo).
+
+Si lo que se cayó es **PC2 completa**, se pierden a la vez `mongos` y el primario de PostgreSQL. Los shards siguen con PC1 y PC3, pero hace falta un `mongos` en otra PC para que la API los alcance. Es una limitación conocida: no hay un segundo `mongos`. No se ha ensayado.

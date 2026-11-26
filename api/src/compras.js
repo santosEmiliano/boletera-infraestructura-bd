@@ -7,6 +7,8 @@ const CODIGOS_TRANSITORIOS = new Set([
   // Se escribió en un nodo que dejó de ser el primario; ya se buscó el nuevo
   'ER_OPTION_PREVENTS_STATEMENT',
   '40001', '40P01', '57P01',
+  // Lo mismo en PostgreSQL: se escribió en la réplica (read-only transaction)
+  '25006',
 ]);
 const ERRORES_MONGO = new Set(['MongoNetworkError', 'MongoNetworkTimeoutError', 'MongoServerSelectionError']);
 

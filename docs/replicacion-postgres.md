@@ -87,7 +87,7 @@ docker exec postgres-pc3 psql -U postgres -d boletera -f /scripts/01_verificar_p
    docker exec postgres-pc3 psql -U postgres -c "SELECT pg_is_in_recovery();"
    ```
 
-4. Cambiar el destino de PostgreSQL en la API a `pc3:5432`.
+4. La API lo encuentra sola si tiene los dos nodos en `PG_HOSTS=pc2,pc3`: pregunta `pg_is_in_recovery()` a cada uno y cambia al que responde `false`, sin reiniciarse. Con un solo host (`PG_HOST=pc2`), hay que cambiarlo a `pc3` y reiniciarla. Detalle y tiempos medidos: `docs/procedimientos-falla.md`.
 
 Al promoverse, PC3 borra `standby.signal` y deja de buscar a PC2. No necesita reiniciarse: ya tiene los parámetros de replicación y la regla de `pg_hba.conf`, que se copiaron de PC2.
 
@@ -143,4 +143,6 @@ Ahora PC3 es el primario y PC2 la réplica. Para volver a los papeles originales
 
 Ensayo con la simulación local: esquema y seed en `sim-pc2` (98,089 filas), rol y slot, `pg_basebackup` (47,678 kB) y réplica en `streaming`/`async`. En `sim-pc3` las 8 particiones con los mismos conteos y la misma poda, e INSERT rechazado. Caída del primario, `pg_promote()` y escritura aceptada en PC3. Regreso de PC2 como réplica de PC3 con el slot `replica_pc2`: una fila insertada en PC3 apareció en PC2 (38,332 movimientos) y el INSERT en PC2 se rechazó.
 
-Lo que falta probar: el paso por la red real entre PCs (con Docker Desktop la IP de origen puede no ser la de la otra PC, por eso la regla de `pg_hba.conf` acepta cualquier origen) y cronometrar la caída con la API y el simulador en marcha.
+Cambio de primario con el pool de la API (`PG_HOSTS` con los dos nodos) y la sonda escribiendo cada 100 ms: 13 segundos sin escrituras desde el `docker stop` del primario, y menos de uno entre el `pg_promote()` y la primera escritura en PC3, sin reiniciar la API.
+
+Lo que falta probar: el paso por la red real entre PCs (con Docker Desktop la IP de origen puede no ser la de la otra PC, por eso la regla de `pg_hba.conf` acepta cualquier origen) y la caída con la API completa y el simulador de compras en marcha.

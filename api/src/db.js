@@ -1,13 +1,13 @@
-import pg from 'pg';
 import { MongoClient } from 'mongodb';
 import { config } from './config.js';
 import { crearPoolMysql } from './mysql-primario.js';
+import { crearPoolPostgres } from './postgres-primario.js';
 
 const { hosts, ...conexionMysql } = config.mysql;
 export const mysqlPool = crearPoolMysql(conexionMysql, { hosts });
 
-export const pgPool = new pg.Pool({ ...config.postgres, max: 20, connectionTimeoutMillis: 2000 });
-pgPool.on('error', (e) => console.error('postgres:', e.message));
+const { hosts: hostsPg, ...conexionPg } = config.postgres;
+export const pgPool = crearPoolPostgres(conexionPg, { hosts: hostsPg });
 
 export const mongo = new MongoClient(config.mongoUri, { serverSelectionTimeoutMS: 2000 });
 

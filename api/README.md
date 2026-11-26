@@ -13,6 +13,8 @@ npm start
 
 `MYSQL_HOSTS` lleva los tres nodos del grupo de MySQL. La API pregunta a cada uno cuál es el primario, al arrancar y cada 2 segundos, y cambia sola si el primario cambia (`src/mysql-primario.js`). Con un solo nodo en la lista funciona igual, sin failover. `boletera_api` necesita el permiso sobre `performance_schema.replication_group_members` que da `mysql/scripts/03_usuarios.sql`.
 
+`PG_HOSTS` lleva el primario y la réplica de PostgreSQL (`pc2,pc3`; cada uno puede llevar puerto, `localhost:5434`). La API pregunta `pg_is_in_recovery()` a cada nodo al arrancar, cada 2 segundos y cuando una conexión falla o una escritura cae en la réplica, y cambia sola al que no está en recuperación (`src/postgres-primario.js`). La promoción con `pg_promote()` sigue siendo manual. Si dos nodos dicen ser primario, no cambia: ver `docs/procedimientos-falla.md`. `PG_HOST` con un solo nodo sigue funcionando, sin failover.
+
 `npm test` corre las pruebas de los endpoints, del orquestador de la compra y del cambio de primario, que usan bases de datos falsas en memoria (`test-utils/falsos.js`) y no necesitan nada instalado. Las pruebas de los módulos de cada base no se realizan de normal a menos que se pida porque usan la base de datos real y borran lo que crean.
 
 ```bash
@@ -41,7 +43,7 @@ Ya se tiene:
 
 - `/health` consulta de verdad a las tres bases.
 - `/metrics` publica `compras_total`, `compra_duracion_segundos` y `http_peticiones_total`, además de las métricas de Node.
-- Las conexiones: un pool de MySQL, un pool de PostgreSQL (20) y el cliente de MongoDB, en `src/db.js`.
+- Las conexiones: un pool de MySQL, un pool de PostgreSQL (20 conexiones, al primario) y el cliente de MongoDB, en `src/db.js`.
 
 El módulo de MySQL (`src/modules/mysql`) lo usa el orquestador de la compra (`src/compras.js`). Sus funciones son `obtenerCliente`, `crearOrden`, `registrarPago`, `marcarOrdenPagada`, `cancelarOrden`, `expirarOrden`, `emitirBoletos` y `marcarBoletoUsado`.
 
@@ -70,6 +72,7 @@ src/
   config.js       variables de entorno
   db.js           conexiones a los tres motores
   mysql-primario.js  pool de MySQL que busca al primario del grupo
+  postgres-primario.js  pool de PostgreSQL que busca al primario tras un pg_promote()
   metricas.js     métricas de Prometheus
   errores.js      errores con código HTTP
   validar.js      validación de las peticiones
