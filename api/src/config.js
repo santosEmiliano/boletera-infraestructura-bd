@@ -11,7 +11,9 @@ export const config = {
     database: env.MYSQL_DATABASE ?? 'boletera',
   },
   postgres: {
-    host: env.PG_HOST ?? 'localhost',
+    // Primario y réplica, separados por comas ("pc2,pc3" o "host:puerto"). La API
+    // busca entre ellos al primario
+    hosts: (env.PG_HOSTS ?? env.PG_HOST ?? 'localhost').split(',').map((h) => h.trim()).filter(Boolean),
     port: Number(env.PG_PORT ?? 5432),
     user: env.PG_USER ?? 'boletera_api',
     password: env.PG_PASSWORD,
