@@ -3,7 +3,8 @@ const env = process.env;
 export const config = {
   puerto: Number(env.PORT ?? 4000),
   mysql: {
-    host: env.MYSQL_HOST ?? 'localhost',
+    // Nodos del grupo, separados por comas. La API busca entre ellos al primario
+    hosts: (env.MYSQL_HOSTS ?? env.MYSQL_HOST ?? 'localhost').split(',').map((h) => h.trim()).filter(Boolean),
     port: Number(env.MYSQL_PORT ?? 3306),
     user: env.MYSQL_USER ?? 'boletera_api',
     password: env.MYSQL_PASSWORD,
