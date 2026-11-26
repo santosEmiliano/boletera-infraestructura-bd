@@ -21,7 +21,7 @@ Llenar antes de empezar:
 
 | PC | Máquina | Sistema | IP | Corre |
 |---|---|---|---|---|
-| PC1 | | | | MySQL, Mongo (cfg, shardA, shardB), Prometheus, Grafana, API |
+| PC1 | | | | MySQL, Mongo (cfg, shardA, shardB), mongos (segundo), Prometheus, Grafana, API |
 | PC2 | | | | MySQL, **PostgreSQL primario**, Mongo (cfg, shardA, shardB), **mongos** |
 | PC3 | | | | MySQL, **PostgreSQL réplica**, Mongo (cfg, shardA, shardB) |
 
@@ -198,7 +198,7 @@ Detalle en `docs/mongo-config-servers.md` y `docs/mongo-sharding.md`.
    docker exec -it mongo-shard-b-pc2 mongosh --port 27020 --file /scripts/03_iniciar_shard.js
    ```
 
-4. En PC2, esperar a que `mongos-pc2` diga `healthy` (`docker compose -f infra/pc2/mongo.yml ps`). Antes de eso, `mongos` todavía no se conecta a los config servers y responde `ECONNREFUSED`.
+4. Esperar a que `mongos-pc2` (en PC2) y `mongos-pc1` (en PC1) digan `healthy` (`docker compose -f infra/pcX/mongo.yml ps`). Antes de eso, todavía no se conectan a los config servers y responden `ECONNREFUSED`.
 5. En PC2, sharding e índices:
 
    ```bash
@@ -236,7 +236,7 @@ En PC1, `api/.env` a partir de `api/.env.example`:
 | `MYSQL_PASSWORD` | La de `boletera_api` en MySQL (fase 3) |
 | `PG_HOSTS` | `pc2,pc3` |
 | `PG_PASSWORD` | `API_PG_PASSWORD` (fase 5) |
-| `MONGO_URI` | `mongodb://pc2:27017/boletera` |
+| `MONGO_URI` | `mongodb://pc2:27017,pc1:27017/boletera` (los dos `mongos`) |
 
 ```bash
 cd api
@@ -260,7 +260,7 @@ Las 50 compras salen con 201 (o 402 las de clientes múltiplos de 50) y `Doble v
 | Red | `ping pcX` desde cada PC | Las tres responden |
 | MySQL | `04_estado.sql` | 1 `PRIMARY` y 2 `SECONDARY`, todos `ONLINE` |
 | PostgreSQL | `pg_stat_replication` en PC2, `pg_is_in_recovery()` en PC3 | `streaming` y `t` |
-| MongoDB | `05_estado_sharding.js` | Cada shard con primario; 5 colecciones fragmentadas |
+| MongoDB | `05_estado_sharding.js` | Cada shard con primario; 5 colecciones fragmentadas; `mongos-pc1` y `mongos-pc2` en `healthy` |
 | Monitoreo | `http://pc1:9090/targets` | Todo `UP` |
 | API | `http://pc1:4000/health` | Los tres `ok` |
 | Compras | simulador, perfil decenas | Sin errores 500 y `Doble venta` 0 |

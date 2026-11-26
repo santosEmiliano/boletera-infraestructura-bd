@@ -30,7 +30,7 @@ Nada se ha levantado todavía en la red real entre las tres PCs.
 | Mongo config server | PC1, PC2, PC3 | 27019 | 7.0 | mongo-cfg-pcX | boletera_mongo_cfg | Miembro de cfgRS | probado en simulación |
 | Mongo shardA | PC1, PC2, PC3 | 27018 | 7.0 | mongo-shard-a-pcX | boletera_mongo_shard_a | Miembro de shardA | probado en simulación |
 | Mongo shardB | PC1, PC2, PC3 | 27020 | 7.0 | mongo-shard-b-pcX | boletera_mongo_shard_b | Miembro de shardB | probado en simulación |
-| mongos | PC2 | 27017 | 7.0 | mongos-pc2 | | Enrutador | probado en simulación |
+| mongos | PC2 y PC1 | 27017 | 7.0 | mongos-pc2, mongos-pc1 | | Enrutador (dos, la API usa los dos) | probado en simulación |
 | `mysqld_exporter` | PC1, PC2, PC3 | 9104 | v0.21.0 | mysqld-exporter-pcX | | Métricas de MySQL | probado en local |
 | `postgres_exporter` | PC2, PC3 | 9187 | v0.15.0 | postgres-exporter-pcX | | Métricas de PostgreSQL | probado en simulación |
 | `mongodb_exporter` shardA | PC1, PC2, PC3 | 9216 | 0.40 (Percona) | mongodb-exporter-shard-a-pcX | | Métricas del miembro de shardA | probado en simulación |
