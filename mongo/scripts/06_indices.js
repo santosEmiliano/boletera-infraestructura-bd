@@ -15,8 +15,8 @@ const INDICES = {
   eventos: [{ categoria: 1 }],
   resenas: [],
   actividad_usuarios: [{ cliente_id: 1, fecha: -1 }],
-  bitacora_accesos: [{ boleto_id: 1 }],
-  notificaciones: [{ cliente_id: 1, enviada_en: -1 }],
+  bitacora_accesos: [],
+  notificaciones: [{ cliente_id: 1, creada_en: -1 }],
 };
 
 // Si la colección no está fragmentada todavía, createIndex la crearía sin

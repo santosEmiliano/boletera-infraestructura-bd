@@ -24,7 +24,7 @@ const COLECCIONES = {
   eventos: { _id: "hashed" },
   resenas: { evento_id: "hashed" },
   actividad_usuarios: { cliente_id: "hashed" },
-  bitacora_accesos: { evento_id: "hashed" },
+  bitacora_accesos: { codigo_qr: "hashed" },
   notificaciones: { cliente_id: "hashed" },
 };
 
