@@ -106,6 +106,8 @@ docker exec -it sim-mongos mongosh --file /scripts/06_indices.js
 docker exec -it sim-mongos mongosh --file /scripts/05_estado_sharding.js
 ```
 
+Antes del 04, `docker compose -f mongo.yml ps` tiene que mostrar `sim-mongos` como `healthy`: no lo estará hasta que se inicie `cfgRS`.
+
 `mongos` se publica en el puerto 27027 de la máquina, para no chocar con otro MongoDB en 27017. Para borrar todo, incluidos los datos de prueba:
 
 ```bash
