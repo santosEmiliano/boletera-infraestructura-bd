@@ -33,7 +33,10 @@ async function comprar(api, { eventoId: evento, funcion, sedeId, asientos }) {
     asientos,
     metodo_pago: elegir(METODOS),
   });
-  return { fase: 'compra', status: r.status, ms: r.ms, error: r.error, sede_id: sedeId, asientos, boletos: r.json?.boletos };
+  return {
+    fase: 'compra', status: r.status, ms: r.ms, error: r.error ?? r.json?.error, sede_id: sedeId, asientos,
+    boletos: r.json?.boletos, orden_id: r.json?.orden_id,
+  };
 }
 
 // Normal: un comprador elige evento, función y de 1 a 4 asientos libres, como
