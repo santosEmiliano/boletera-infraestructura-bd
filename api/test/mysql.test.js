@@ -121,3 +121,16 @@ test('dos escaneos a la vez: solo uno es válido', { skip: omitir }, async () =>
   const r = await Promise.all(Array.from({ length: 10 }, () => mysql.marcarBoletoUsado(boleto.codigo_qr)));
   assert.equal(r.filter((x) => x.resultado === 'valido').length, 1);
 });
+
+test('expirarHuerfanas: solo expira las pendientes viejas', { skip: omitir }, async () => {
+  const vieja = (await nuevaOrden()).orden_id;
+  const nueva = (await nuevaOrden()).orden_id;
+  const pagada = (await nuevaOrden()).orden_id;
+  await mysql.marcarOrdenPagada(pagada);
+  await pool.execute('UPDATE ordenes SET creada_en = NOW() - INTERVAL 20 MINUTE WHERE orden_id IN (?, ?)', [vieja, pagada]);
+
+  assert.ok(await mysql.expirarHuerfanas(15) >= 1);
+  assert.equal(await estadoDe(vieja), 'expirada');
+  assert.equal(await estadoDe(nueva), 'pendiente', 'una orden reciente sigue en curso');
+  assert.equal(await estadoDe(pagada), 'pagada', 'solo se tocan las pendientes');
+});
