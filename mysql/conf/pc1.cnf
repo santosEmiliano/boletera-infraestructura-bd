@@ -17,6 +17,10 @@ loose-group_replication_group_seeds="pc1:33061,pc2:33061,pc3:33061"
 loose-group_replication_start_on_boot=OFF
 loose-group_replication_bootstrap_group=OFF
 loose-group_replication_recovery_get_public_key=ON
-# Las conexiones de los otros nodos llegan reenviadas por Docker Desktop desde
-# su red interna; sin esto el grupo las rechaza
-loose-group_replication_ip_allowlist="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1/8"
+# Docker Desktop en Mac reenvía las conexiones de pc2 y pc3 con una dirección
+# interna en formato IPv6 (::ffff:...), no con la IP real de la PC. Si esa
+# dirección no está en la lista, MySQL 8.0.46 no la rechaza: se cae con
+# "buffer overflow detected" al volver a unirse al grupo. Como en esta PC no se
+# puede filtrar por IP (todas llegan con la misma dirección interna), se aceptan
+# todas; el puerto 33061 solo se alcanza desde la red local.
+loose-group_replication_ip_allowlist="0.0.0.0/0,::/0"

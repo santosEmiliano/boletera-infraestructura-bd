@@ -32,7 +32,9 @@ export async function expirarVencidas() {
 // alExpirar(ordenId) para que la orden quede 'expirada' en MySQL.
 // Si el aviso falla (MySQL caído), la orden se guarda y se reintenta en la
 // siguiente vuelta: en PostgreSQL ya no aparecería como vencida.
-export function iniciarExpiracion({ alExpirar, cadaMs = 60_000 }) {
+// limpiarHuerfanas(), si se da, también corre en cada vuelta: marca como
+// expiradas en MySQL las órdenes pendientes que ya nadie va a terminar.
+export function iniciarExpiracion({ alExpirar, limpiarHuerfanas, cadaMs = 60_000 }) {
   const porAvisar = new Set();
   let corriendo = false;
 
@@ -53,6 +55,12 @@ export function iniciarExpiracion({ alExpirar, cadaMs = 60_000 }) {
       }
     } catch (e) {
       console.error(`expiración (mysql): ${porAvisar.size} órdenes por avisar:`, e.message);
+    }
+    try {
+      const huerfanas = limpiarHuerfanas ? await limpiarHuerfanas() : 0;
+      if (huerfanas) console.log(`expiración: ${huerfanas} órdenes pendientes huérfanas`);
+    } catch (e) {
+      console.error('expiración (huérfanas):', e.message);
     } finally {
       corriendo = false;
     }

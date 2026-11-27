@@ -68,6 +68,19 @@ export const marcarOrdenPagada = (ordenId) => cambiarEstado(ordenId, 'pagada');
 export const cancelarOrden = (ordenId) => cambiarEstado(ordenId, 'cancelada');
 export const expirarOrden = (ordenId) => cambiarEstado(ordenId, 'expirada');
 
+// Órdenes 'pendiente' que quedaron huérfanas: sin reserva y sin nadie que las
+// termine. Pasa cuando crearOrden se reintenta tras un cambio de primario y
+// MySQL sí había guardado el primer intento. Una compra real tarda milisegundos
+// y su reserva dura 10 minutos, así que pasado ese margen ninguna orden
+// pendiente sigue en curso. Devuelve cuántas marcó como 'expirada'.
+export async function expirarHuerfanas(minutos) {
+  const [r] = await pool.execute(
+    "UPDATE ordenes SET estado = 'expirada' WHERE estado = 'pendiente' AND creada_en < NOW() - INTERVAL ? MINUTE",
+    [minutos],
+  );
+  return r.affectedRows;
+}
+
 // Si la orden ya tiene boletos (un reintento tras un corte), devuelve los mismos
 export function emitirBoletos(ordenId) {
   const columnas = 'boleto_id, sede_id, asiento_id, codigo_qr';
